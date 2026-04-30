@@ -1,0 +1,130 @@
+# Account API
+
+The Account API provides access to customer-specific data — profile, order history, downloads, and reviews. All methods (except guest order lookups) require the customer to be authenticated with Basic Auth or JWT.
+
+To access account methods, call `client.account()`:
+
+```kotlin
+val account = client.account()
+```
+
+> **Note:** All account routes call `cocart/v2/my-account/...` directly, bypassing the configurable namespace and REST prefix. This is by design — the Account API always lives at that fixed path.
+
+## Profile
+
+### Get Profile
+
+```kotlin
+val response = client.account().getProfile()
+
+println(response.get("display_name"))
+println(response.get("email"))
+println(response.get("first_name"))
+println(response.get("last_name"))
+```
+
+### Update Profile
+
+```kotlin
+val response = client.account().updateProfile(mapOf(
+    "first_name" to "John",
+    "last_name" to "Doe",
+    "display_name" to "John Doe"
+))
+```
+
+### Change Password
+
+Field names are remapped automatically — you pass readable names and the SDK sends the correct WooCommerce field names (`password_current`, `password_1`, `password_2`):
+
+```kotlin
+client.account().changePassword(
+    current = "old_password",
+    password = "new_password",
+    confirm = "new_password"
+)
+```
+
+## Orders
+
+### Get All Orders
+
+```kotlin
+val response = client.account().getOrders()
+
+// With parameters
+val response = client.account().getOrders(mapOf(
+    "page" to "1",
+    "per_page" to "10",
+    "order" to "DESC" // or "ASC"
+))
+```
+
+### Get a Single Order
+
+```kotlin
+val response = client.account().getOrder(id = 123)
+
+println(response.get("status"))
+println(response.get("total"))
+```
+
+### Guest Order Lookup
+
+Look up an order by ID and the billing email — no authentication required:
+
+```kotlin
+val response = client.account().getGuestOrder(
+    id = 123,
+    email = "customer@example.com"
+)
+```
+
+## Downloads
+
+### Get Order Downloads
+
+```kotlin
+val response = client.account().getOrderDownloads(id = 123)
+```
+
+### Guest Order Downloads
+
+```kotlin
+val response = client.account().getGuestOrderDownloads(
+    id = 123,
+    email = "customer@example.com"
+)
+```
+
+### Get All Downloads
+
+Returns all downloadable files purchased by the authenticated customer:
+
+```kotlin
+val response = client.account().getDownloads()
+```
+
+## Reviews
+
+Returns product reviews written by the authenticated customer:
+
+```kotlin
+val response = client.account().getReviews()
+```
+
+## Error Handling
+
+If the CoCart plugin is not installed or the account endpoint is unreachable, the SDK catches `rest_no_route` errors and rethrows them with a clearer code:
+
+```kotlin
+import com.cocart.sdk.errors.CoCartException
+
+try {
+    client.account().getProfile()
+} catch (e: CoCartException) {
+    if (e.data?.get("code") == "cocart_plugin_required") {
+        // CoCart plugin is not active on the store
+    }
+}
+```
