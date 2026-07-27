@@ -16,9 +16,6 @@ local.properties
 *.iws
 *.ipr
 
-# Gradle wrapper JAR (binary — regenerate with: gradle wrapper)
-gradle/wrapper/gradle-wrapper.jar
-
 # macOS
 .DS_Store
 
