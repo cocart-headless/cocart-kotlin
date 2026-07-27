@@ -48,7 +48,7 @@ val response = client.products().find(123)
 
 ## Find a Product by Slug
 
-Available with **CoCart Basic** only. Throws `VersionException` in legacy mode.
+Available with **CoCart Starter** only. Throws `VersionException` in legacy mode.
 
 ```kotlin
 val response = client.products().findBySlug("blue-hoodie")
@@ -76,7 +76,7 @@ val response = client.products().tag("sale")
 
 ## Brands
 
-Available with **CoCart Basic** only.
+Available with **CoCart Starter** only.
 
 ```kotlin
 // All brands
@@ -93,7 +93,7 @@ val response = client.products().byBrand("nike")
 
 Returns reviews written by the currently authenticated customer. Requires Basic Auth or JWT.
 
-Available with **CoCart Basic** only.
+Available with **CoCart Starter** only.
 
 ```kotlin
 val response = client.products().myReviews()

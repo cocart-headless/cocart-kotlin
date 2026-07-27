@@ -115,7 +115,7 @@ val client3 = CoCart(context, "https://your-store.com", CoCartOptions(
 
 ## Legacy Plugin Support
 
-The SDK supports both **CoCart Basic** and the **legacy CoCart plugin** (`cart-rest-api-for-woocommerce` v4.x). By default, the SDK targets CoCart Basic.
+The SDK supports both **CoCart Starter** and the **CoCart Community plugin** (`cart-rest-api-for-woocommerce` v4.x). By default, the SDK targets CoCart Starter.
 
 To use the SDK with the legacy plugin, set `mainPlugin` to `MainPlugin.LEGACY`:
 
@@ -130,7 +130,7 @@ client.setMainPlugin(MainPlugin.LEGACY)
 
 ### What changes in legacy mode
 
-**Basic-only methods throw immediately.** Methods that require CoCart Basic will throw a `VersionException` before making any HTTP request:
+**Basic-only methods throw immediately.** Methods that require CoCart Starter will throw a `VersionException` before making any HTTP request:
 
 ```kotlin
 import com.cocart.sdk.errors.VersionException
@@ -142,7 +142,7 @@ val client = CoCart(context, "https://your-store.com", CoCartOptions(
 try {
     client.products().findBySlug("blue-hoodie")
 } catch (e: VersionException) {
-    // "findBySlug() requires CoCart Basic. Please upgrade..."
+    // "findBySlug() requires CoCart Starter. Please upgrade..."
 }
 ```
 
@@ -154,4 +154,4 @@ Basic-only methods include:
 - `products().myReviews()`
 - `cart().getFees()`, `addFee()`, `removeFees()`
 
-**Field filtering uses `fields` instead of `_fields`.** The legacy plugin uses CoCart's custom `fields` query parameter, while CoCart Basic uses the WordPress standard `_fields`. The SDK handles this automatically — `cart().getFiltered()` sends the correct parameter based on the configured main plugin.
+**Field filtering uses `fields` instead of `_fields`.** The legacy plugin uses CoCart's custom `fields` query parameter, while CoCart Starter uses the WordPress standard `_fields`. The SDK handles this automatically — `cart().getFiltered()` sends the correct parameter based on the configured main plugin.

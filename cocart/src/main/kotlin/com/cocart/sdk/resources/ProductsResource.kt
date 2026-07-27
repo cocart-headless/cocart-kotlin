@@ -21,7 +21,7 @@ class ProductsResource(
 
     suspend fun findBySlug(slug: String): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {
-            throw VersionException("findBySlug() is only available with CoCart Basic")
+            throw VersionException("findBySlug() is only available with CoCart Starter")
         }
         return http.get("products/search", mapOf("slug" to slug))
     }

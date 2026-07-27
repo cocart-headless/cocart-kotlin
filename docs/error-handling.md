@@ -11,7 +11,7 @@ CoCartException (base)                    — any API error
 ├── AuthException                         — login / permission problems (401, 403)
 │   └── TwoFactorAuthRequiredException    — 2FA code required to complete login (401)
 ├── ValidationException                   — bad input (400)
-├── VersionException                      — method requires CoCart Basic (legacy mode)
+├── VersionException                      — method requires CoCart Starter (legacy mode)
 ├── NetworkException                      — connection / timeout failures
 └── RateLimitException                    — 429 Too Many Requests
 ```
@@ -26,7 +26,7 @@ import com.cocart.sdk.errors.*
 try {
     client.cart().addItem(999, 1.0)
 } catch (e: VersionException) {
-    // Method requires CoCart Basic but SDK is in legacy mode
+    // Method requires CoCart Starter but SDK is in legacy mode
     println("Upgrade required: ${e.message}")
 } catch (e: ValidationException) {
     // 400 — product not found, out of stock, invalid quantity, etc.
@@ -254,7 +254,7 @@ val client = CoCart(context, "https://your-store.com", CoCartOptions(
 try {
     client.products().findBySlug("blue-hoodie")
 } catch (e: VersionException) {
-    // e.message => "findBySlug() requires CoCart Basic. Please upgrade..."
+    // e.message => "findBySlug() requires CoCart Starter. Please upgrade..."
     // e.statusCode is null — no HTTP request was made
 }
 ```
