@@ -43,6 +43,32 @@ class CoCartResponse(
 
     fun getCacheStatus(): String? = headers["CoCart-Cache"]
 
+    /**
+     * Get the cart's tax lines, normalized to a list of `{key, name, price}` entries.
+     *
+     * The server returns `taxes` either as an array already, or (legacy) as an
+     * object keyed by tax rate code (e.g. `{ "US-US-1": { name, price } }`) —
+     * the latter is mapped to the same `{key, name, price}` shape.
+     */
+    fun getTaxes(): List<Map<String, Any?>> {
+        return when (val raw = data["taxes"]) {
+            is List<*> -> raw.filterIsInstance<Map<*, *>>()
+                .map { entry -> entry.entries.associate { it.key.toString() to it.value } }
+            is Map<*, *> -> raw.entries.map { (key, tax) ->
+                val taxMap = tax as? Map<*, *>
+                mapOf(
+                    "key" to key.toString(),
+                    "name" to taxMap?.get("name"),
+                    "price" to taxMap?.get("price")
+                )
+            }
+            else -> emptyList()
+        }
+    }
+
+    /** Check if the cart has any tax lines. */
+    fun hasTaxes(): Boolean = getTaxes().isNotEmpty()
+
     fun isNotModified(): Boolean = statusCode == 304
 
     fun toMap(): Map<String, Any?> = data.toMap()

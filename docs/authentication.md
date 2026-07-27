@@ -250,7 +250,7 @@ If multiple authentication methods are configured, the SDK uses this priority or
 1. **JWT Token** (`jwtToken`) — `Authorization: Bearer <token>`
 2. **Basic Auth** (`username` / `password`) — `Authorization: Basic <base64>`
 3. **Consumer Keys** (`consumerKey` / `consumerSecret`) — `Authorization: Basic <base64>`
-4. **Guest** — no auth header; cart key sent via `Cart-Key` header and query param
+4. **Guest** — no auth header; cart key sent via query param and one header — `Cart-Key` for `MainPlugin.BASIC`, `CoCart-API-Cart-Key` for `MainPlugin.LEGACY`
 
 ### Switching Auth at Runtime
 

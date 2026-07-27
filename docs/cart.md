@@ -96,17 +96,20 @@ val response = client.cart().addVariation(456, 1.0, mapOf(
 ))
 ```
 
-### Add Multiple Items at Once
+### Add Multiple Children of a Grouped Product
+
+`addItems()` adds children of a single WooCommerce **Grouped Product** to the cart
+in one request — it is not a generic "add several unrelated products" call. Pass
+the grouped product's own ID plus a map of child product ID => quantity:
 
 ```kotlin
-val response = client.cart().addItems(listOf(
-    mapOf("id" to 123, "quantity" to 2.0),
-    mapOf("id" to 456, "quantity" to 1.0, "variation" to mapOf(
-        "attribute_pa_color" to "red"
-    )),
-    mapOf("id" to 789, "quantity" to 3.0)
+val response = client.cart().addItems(123, mapOf(
+    "456" to 2,
+    "789" to 1
 ))
 ```
+
+To add several *unrelated* products in one request, use [`client.batch()`](#batch-requests-cocart-plus) instead.
 
 ## Updating Items
 
@@ -120,11 +123,27 @@ client.cart().updateItem("abc123def456", 3.0)
 
 ### Update Multiple Items
 
+There is no bulk-update endpoint, so `updateItems()` loops `updateItem()` sequentially,
+one request per item, and returns the response from the last update:
+
 ```kotlin
+client.cart().updateItems(mapOf(
+    "abc123" to 2.0,
+    "def456" to 5.0
+))
+
+// or, using the full entry format
 client.cart().updateItems(listOf(
     mapOf("item_key" to "abc123", "quantity" to 2.0),
     mapOf("item_key" to "def456", "quantity" to 5.0)
 ))
+```
+
+For a true single round trip, use `batchUpdateItems()` instead (requires CoCart Plus
+— see [Batch Requests](#batch-requests-cocart-plus)):
+
+```kotlin
+client.cart().batchUpdateItems(mapOf("abc123" to 2.0, "def456" to 5.0))
 ```
 
 ## Removing Items
@@ -137,8 +156,18 @@ client.cart().removeItem("abc123def456")
 
 ### Remove Multiple Items
 
+There is no bulk-remove endpoint, so `removeItems()` loops `removeItem()` sequentially,
+one request per item, and returns the response from the last removal:
+
 ```kotlin
 client.cart().removeItems(listOf("abc123", "def456"))
+```
+
+For a true single round trip, use `batchRemoveItems()` instead (requires CoCart Plus
+— see [Batch Requests](#batch-requests-cocart-plus)):
+
+```kotlin
+client.cart().batchRemoveItems(listOf("abc123", "def456"))
 ```
 
 ### Restore a Removed Item
@@ -234,26 +263,46 @@ client.cart().updateCustomer(
 )
 ```
 
+If `shipping` is omitted or empty, billing is mirrored into the shipping address
+fields (same as leaving "ship to a different address" unchecked at checkout).
+
 ## Shipping
 
 ```kotlin
 // Get available shipping methods
 val methods = client.cart().getShippingMethods()
 
-// Calculate shipping for an address
-client.cart().calculateShipping(mapOf(
-    "country" to "US",
-    "state" to "NY",
-    "postcode" to "10001",
-    "city" to "New York"
-))
-
-// Set the selected shipping method (CoCart Plus)
-client.cart().setShippingMethod(mapOf(
-    "key" to "flat_rate:1",
-    "value" to "Flat Rate"
-))
+// Set the selected shipping rate for a package (CoCart Plus).
+// Omit packageId to apply the rate to every package.
+client.cart().setShippingMethod("flat_rate:1")
+client.cart().setShippingMethod("flat_rate:1", packageId = "0")
 ```
+
+> **Deprecated:** `calculateShipping(address)` no longer does anything with `address`
+> — there is no address-taking shipping-calculation endpoint in the CoCart REST API.
+> Call `updateCustomer()` with the destination address first (the server recalculates
+> totals as part of that request), then use `calculate()` directly.
+
+## Batch Requests (CoCart Plus)
+
+Dispatch multiple sub-requests in a single call via `client.batch()` — useful for
+adding several unrelated products, or any set of writes you want as one round trip
+instead of many. Requires CoCart Plus; throws if the endpoint isn't available.
+
+```kotlin
+import com.cocart.sdk.http.BatchRequestItem
+
+client.batch(
+    listOf(
+        BatchRequestItem(method = "POST", path = "/cocart/v2/cart/add-item", body = mapOf("id" to 123, "quantity" to 1)),
+        BatchRequestItem(method = "DELETE", path = "/cocart/v2/cart/item/abc123")
+    )
+)
+```
+
+`CartResource.batchUpdateItems()` / `batchRemoveItems()` build the `BatchRequestItem`
+list for you — see [Update Multiple Items](#update-multiple-items) and
+[Remove Multiple Items](#remove-multiple-items) above.
 
 ## Fees (CoCart Plus)
 
@@ -307,6 +356,8 @@ response.getNotices()     // List<Any?> — WooCommerce notices
 response.getCurrency()    // Map<String, Any?>? — currency data
 response.getCacheStatus() // "HIT" | "MISS" | "SKIP" | null
 response.isNotModified()  // true if 304 Not Modified
+response.getTaxes()       // List<Map<String, Any?>> — normalized {key, name, price} tax lines
+response.hasTaxes()       // Boolean — true if the cart has any tax lines
 
 // Dot-notation access
 response.get("totals.total")

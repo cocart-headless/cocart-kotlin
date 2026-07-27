@@ -2,6 +2,10 @@
 
 The Account API provides access to customer-specific data — profile, order history, downloads, and reviews. All methods (except guest order lookups) require the customer to be authenticated with Basic Auth or JWT.
 
+> **Note:** The Account API is fully supported by this SDK, but the Account API
+> itself is not yet available in a released version of the CoCart plugin — it's
+> coming in a future release. This documentation is ready for when it ships.
+
 To access account methods, call `client.account()`:
 
 ```kotlin

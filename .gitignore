@@ -3,6 +3,9 @@
 build/
 **/build/
 
+# Kotlin compiler daemon (error logs, session state)
+.kotlin/
+
 # Local configuration
 local.properties
 *.local.properties

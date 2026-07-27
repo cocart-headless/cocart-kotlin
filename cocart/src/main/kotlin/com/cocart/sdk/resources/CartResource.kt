@@ -3,7 +3,9 @@ package com.cocart.sdk.resources
 import com.cocart.sdk.CoCartOptions
 import com.cocart.sdk.MainPlugin
 import com.cocart.sdk.auth.AuthManager
+import com.cocart.sdk.errors.ValidationException
 import com.cocart.sdk.errors.VersionException
+import com.cocart.sdk.http.BatchRequestItem
 import com.cocart.sdk.http.CoCartResponse
 import com.cocart.sdk.http.HttpClient
 import com.cocart.sdk.validation.validateProductId
@@ -52,8 +54,38 @@ class CartResource(
         ))
     }
 
-    suspend fun addItems(items: List<Map<String, Any?>>): CoCartResponse =
-        http.post("cart/add-items", mapOf("items" to items))
+    /**
+     * Add multiple children of a WooCommerce Grouped Product to the cart in a
+     * single request, via the dedicated `cart/add-items` endpoint.
+     *
+     * This is NOT a generic "add several unrelated products" call — the server
+     * requires a single grouped product ID plus a map of that group's child
+     * product IDs to quantities. For adding unrelated products in one request,
+     * use [com.cocart.sdk.CoCart.batch] instead.
+     *
+     * @param groupedProductId The parent grouped product's ID.
+     * @param items Map of child product ID => quantity.
+     */
+    suspend fun addItems(groupedProductId: Int, items: Map<String, Int>): CoCartResponse {
+        validateProductId(groupedProductId)
+        if (items.isEmpty()) throw ValidationException("addItems() requires at least one item.")
+        return http.post(
+            "cart/add-items",
+            mapOf("id" to groupedProductId, "quantity" to items)
+        )
+    }
+
+    /** Overload accepting a list of `{id, quantity}` entries instead of a map. */
+    suspend fun addItems(groupedProductId: Int, items: List<Map<String, Any?>>): CoCartResponse {
+        val quantity = items.associate { entry ->
+            val childId = entry["id"]?.toString()
+                ?: throw ValidationException("addItems() entries require an id.")
+            val qty = (entry["quantity"] as? Number)?.toInt()
+                ?: throw ValidationException("addItems() entries require a quantity.")
+            childId to qty
+        }
+        return addItems(groupedProductId, quantity)
+    }
 
     suspend fun updateItem(
         itemKey: String,
@@ -66,14 +98,95 @@ class CartResource(
         return http.post("cart/item/$itemKey", body)
     }
 
+    /**
+     * Update multiple items' quantities, one request per item, sequentially.
+     * Returns the response from the last update (reflects the fully-updated cart).
+     *
+     * There is no real bulk-update endpoint, so this loops [updateItem] per
+     * entry. For a true single round trip, use [batchUpdateItems] instead
+     * (requires CoCart Plus).
+     */
+    suspend fun updateItems(items: Map<String, Double>): CoCartResponse =
+        updateItemsSequentially(items.entries.map { (key, qty) -> key to qty })
+
+    /** Overload accepting a list of `{item_key, quantity}` entries instead of a map. */
     suspend fun updateItems(items: List<Map<String, Any?>>): CoCartResponse =
-        http.post("cart/items", mapOf("items" to items))
+        updateItemsSequentially(items.map(::toItemKeyQuantityPair))
+
+    /**
+     * Update multiple items' quantities in a single request via [com.cocart.sdk.CoCart.batch]
+     * (requires CoCart Plus). Unlike [updateItems], this is a true single round trip
+     * instead of one sequential request per item.
+     */
+    suspend fun batchUpdateItems(items: Map<String, Double>): CoCartResponse =
+        batchUpdateItemsInternal(items.entries.map { (key, qty) -> key to qty })
+
+    /** Overload accepting a list of `{item_key, quantity}` entries instead of a map. */
+    suspend fun batchUpdateItems(items: List<Map<String, Any?>>): CoCartResponse =
+        batchUpdateItemsInternal(items.map(::toItemKeyQuantityPair))
 
     suspend fun removeItem(itemKey: String): CoCartResponse =
         http.delete("cart/item/$itemKey")
 
-    suspend fun removeItems(itemKeys: List<String>): CoCartResponse =
-        http.post("cart/items/remove", mapOf("keys" to itemKeys))
+    /**
+     * Remove multiple items from the cart, one request per item, sequentially.
+     * Returns the response from the last removal (reflects the fully-updated cart).
+     *
+     * There is no real bulk-remove endpoint, so this loops [removeItem] per key.
+     * For a true single round trip, use [batchRemoveItems] instead (requires CoCart Plus).
+     */
+    suspend fun removeItems(itemKeys: List<String>): CoCartResponse {
+        if (itemKeys.isEmpty()) throw ValidationException("removeItems() requires at least one item key.")
+        var response: CoCartResponse? = null
+        for (itemKey in itemKeys) {
+            response = removeItem(itemKey)
+        }
+        return response!!
+    }
+
+    /**
+     * Remove multiple items in a single request via [com.cocart.sdk.CoCart.batch]
+     * (requires CoCart Plus). Unlike [removeItems], this is a true single round
+     * trip instead of one sequential request per item.
+     */
+    suspend fun batchRemoveItems(itemKeys: List<String>): CoCartResponse {
+        if (itemKeys.isEmpty()) throw ValidationException("batchRemoveItems() requires at least one item key.")
+        val requests = itemKeys.map { itemKey ->
+            BatchRequestItem(method = "DELETE", path = batchPath("cart/item/$itemKey"))
+        }
+        return http.batch(requests)
+    }
+
+    private fun toItemKeyQuantityPair(entry: Map<String, Any?>): Pair<String, Double> {
+        val itemKey = entry["item_key"] as? String
+            ?: throw ValidationException("updateItems() entries require an item_key.")
+        val qty = (entry["quantity"] as? Number)?.toDouble()
+            ?: throw ValidationException("updateItems() entries require a quantity.")
+        return itemKey to qty
+    }
+
+    private suspend fun updateItemsSequentially(entries: List<Pair<String, Double>>): CoCartResponse {
+        if (entries.isEmpty()) throw ValidationException("updateItems() requires at least one item.")
+        var response: CoCartResponse? = null
+        for ((itemKey, qty) in entries) {
+            response = updateItem(itemKey, qty)
+        }
+        return response!!
+    }
+
+    private suspend fun batchUpdateItemsInternal(entries: List<Pair<String, Double>>): CoCartResponse {
+        if (entries.isEmpty()) throw ValidationException("batchUpdateItems() requires at least one item.")
+        val requests = entries.map { (itemKey, qty) ->
+            BatchRequestItem(
+                method = "POST",
+                path = batchPath("cart/item/$itemKey"),
+                body = mapOf("quantity" to qty)
+            )
+        }
+        return http.batch(requests)
+    }
+
+    private fun batchPath(path: String): String = "/${options.namespace}/v2/${path.trimStart('/')}"
 
     suspend fun restoreItem(itemKey: String): CoCartResponse =
         http.post("cart/item/$itemKey/restore")
@@ -110,24 +223,74 @@ class CartResource(
 
     suspend fun checkCoupons(): CoCartResponse = http.get("cart/coupons/check")
 
+    /**
+     * Update customer billing (and optionally shipping) address on the cart.
+     *
+     * Posts to `cart/update` — billing fields are sent unprefixed
+     * (`first_name`, `address_1`, ...) and shipping fields are sent
+     * `s_`-prefixed (`s_first_name`, `s_address_1`, ...), which the server
+     * always validates as required for any address field the destination
+     * country marks required, independent of whether
+     * `ship_to_different_address` is set. If [shipping] is omitted or empty,
+     * billing is mirrored into the `s_` fields so that check passes and the
+     * shipping address matches billing, same as leaving "ship to a different
+     * address" unchecked at a normal WooCommerce checkout.
+     *
+     * @param billing  Billing address fields (unprefixed, e.g. `first_name`, `address_1`, `city`, `postcode`, `country`, `email`, `phone`)
+     * @param shipping Shipping address fields, if different from billing. Omit to mirror billing.
+     */
     suspend fun updateCustomer(
-        billing: Map<String, Any?>,
-        shipping: Map<String, Any?>? = null
+        billing: Map<String, String> = emptyMap(),
+        shipping: Map<String, String>? = null
     ): CoCartResponse {
-        val body = mutableMapOf<String, Any?>("billing" to billing)
-        shipping?.let { body["shipping"] = it }
-        return http.post("cart/customer", body)
+        val hasDistinctShipping = !shipping.isNullOrEmpty()
+        val shipTo = if (hasDistinctShipping) shipping!! else billing
+
+        val body = mutableMapOf<String, Any?>("namespace" to "update-customer")
+        billing.forEach { (key, value) -> body[key] = value }
+        shipTo.forEach { (key, value) -> body["s_$key"] = value }
+        if (hasDistinctShipping) {
+            body["ship_to_different_address"] = true
+        }
+
+        return http.post("cart/update", body)
     }
 
     suspend fun getCustomer(): CoCartResponse = http.get("cart/customer")
 
     suspend fun getShippingMethods(): CoCartResponse = http.get("cart/shipping-methods")
 
-    suspend fun setShippingMethod(method: Map<String, Any?>): CoCartResponse =
-        http.post("cart/shipping-methods", method)
+    /**
+     * Select a shipping rate for a package (CoCart Plus).
+     *
+     * Posts `rate_id` (and optional `package_id`) to `POST cart/set-shipping-method`.
+     * Omit [packageId] to apply the rate to every package.
+     *
+     * @param rateId    The chosen rate's key, e.g. `flat_rate:2` (see a shipping package's `rates` map).
+     * @param packageId Restrict the selection to one package. Omit to apply to all packages.
+     */
+    suspend fun setShippingMethod(rateId: String, packageId: String? = null): CoCartResponse {
+        val body = mutableMapOf<String, Any?>("rate_id" to rateId)
+        packageId?.let { body["package_id"] = it }
+        return http.post("cart/set-shipping-method", body)
+    }
 
-    suspend fun calculateShipping(address: Map<String, Any?>): CoCartResponse =
-        http.post("cart/shipping-methods/calculate", address)
+    /**
+     * There is no address-taking shipping-calculation endpoint in the CoCart
+     * REST API — `cart/shipping-methods/calculate` (what this method used to
+     * call) does not exist. To calculate shipping, call [updateCustomer] with
+     * the destination address first (the server recalculates totals as part
+     * of that request); this method now just delegates to [calculate],
+     * ignoring [address]. Prefer [calculate] directly.
+     */
+    @Deprecated(
+        "There is no shipping-calculation endpoint that accepts an address. " +
+            "Call updateCustomer() with the destination address, then use calculate() directly.",
+        ReplaceWith("calculate()")
+    )
+    suspend fun calculateShipping(address: Map<String, Any?>? = null): CoCartResponse {
+        return calculate()
+    }
 
     suspend fun getFees(): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {

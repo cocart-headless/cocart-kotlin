@@ -103,4 +103,45 @@ class CoCartResponseTest {
         val r = response(mapOf("items" to listOf(mapOf("name" to "first"), mapOf("name" to "second"))))
         assertEquals("second", r.get("items.1.name"))
     }
+
+    @Test
+    fun `getTaxes returns array taxes as-is`() {
+        val taxes = listOf(mapOf("key" to "US-US-1", "name" to "State Tax", "price" to "5.00"))
+        val r = response(mapOf("taxes" to taxes))
+        assertEquals(taxes, r.getTaxes())
+    }
+
+    @Test
+    fun `getTaxes normalizes legacy object keyed by tax rate code`() {
+        val r = response(
+            mapOf(
+                "taxes" to mapOf(
+                    "US-US-1" to mapOf("name" to "State Tax", "price" to "5.00")
+                )
+            )
+        )
+        val taxes = r.getTaxes()
+        assertEquals(1, taxes.size)
+        assertEquals("US-US-1", taxes[0]["key"])
+        assertEquals("State Tax", taxes[0]["name"])
+        assertEquals("5.00", taxes[0]["price"])
+    }
+
+    @Test
+    fun `getTaxes returns empty list when taxes absent`() {
+        assertEquals(emptyList<Any>(), response().getTaxes())
+    }
+
+    @Test
+    fun `hasTaxes is true when taxes present`() {
+        val r = response(mapOf("taxes" to listOf(mapOf("key" to "US-US-1"))))
+        assertTrue(r.hasTaxes())
+    }
+
+    @Test
+    fun `hasTaxes is false when taxes empty or absent`() {
+        assertFalse(response().hasTaxes())
+        assertFalse(response(mapOf("taxes" to emptyList<Any>())).hasTaxes())
+        assertFalse(response(mapOf("taxes" to emptyMap<String, Any>())).hasTaxes())
+    }
 }

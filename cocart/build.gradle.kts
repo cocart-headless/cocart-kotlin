@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    kotlin("plugin.serialization")
+    id("com.android.library") version "8.13.2"
+    kotlin("android") version "2.4.10"
+    kotlin("plugin.serialization") version "2.4.10"
     id("maven-publish")
 }
 
@@ -18,8 +18,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     testOptions {
@@ -30,13 +32,14 @@ android {
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.security:security-crypto:1.1.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.3")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
     testImplementation("io.mockk:mockk:1.14.9")
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }
 
 afterEvaluate {

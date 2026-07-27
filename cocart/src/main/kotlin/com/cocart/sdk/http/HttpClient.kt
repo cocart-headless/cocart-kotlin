@@ -1,11 +1,19 @@
 package com.cocart.sdk.http
 
 import com.cocart.sdk.CoCartOptions
+import com.cocart.sdk.MainPlugin
 import com.cocart.sdk.auth.AuthManager
 import com.cocart.sdk.errors.CoCartException
 import com.cocart.sdk.errors.NetworkException
 import com.cocart.sdk.errors.RateLimitException
+import com.cocart.sdk.errors.ValidationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -17,8 +25,16 @@ import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 enum class CoCartEvent { REQUEST, RESPONSE, ERROR }
+
+/** Cached GET response, keyed by the fully-built request URL, used to serve 304 responses. */
+private data class ETagCacheEntry(
+    val etag: String,
+    val body: Map<String, Any?>,
+    val headers: Map<String, String>
+)
 
 class HttpClient(
     private val siteURL: String,
@@ -30,8 +46,13 @@ class HttpClient(
         .readTimeout(options.timeout, TimeUnit.MILLISECONDS)
         .build()
 
-    private val etagCache = mutableMapOf<String, String>()
+    private val etagCache = mutableMapOf<String, ETagCacheEntry>()
     private val listeners = mutableMapOf<CoCartEvent, MutableList<(Map<String, Any?>) -> Unit>>()
+
+    // In-flight GET de-duplication: concurrent identical GETs share one network round trip.
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val inFlightGetsMutex = Mutex()
+    private val inFlightGets = mutableMapOf<String, Deferred<CoCartResponse>>()
 
     fun on(event: CoCartEvent, handler: (Map<String, Any?>) -> Unit) {
         listeners.getOrPut(event) { mutableListOf() }.add(handler)
@@ -70,6 +91,32 @@ class HttpClient(
 
     fun clearETagCache() = etagCache.clear()
 
+    /**
+     * Dispatch multiple sub-requests in a single call via `{namespace}/batch`
+     * (requires CoCart Plus).
+     *
+     * Returns one merged, up-to-date cart response with per-operation notices,
+     * instead of one response per request.
+     */
+    suspend fun batch(requests: List<BatchRequestItem>): CoCartResponse {
+        if (requests.isEmpty()) {
+            throw ValidationException("batch() requires at least one request.")
+        }
+
+        return try {
+            postRaw("${options.namespace}/batch", mapOf("requests" to requests.map { it.toMap() }))
+        } catch (e: CoCartException) {
+            if (e.data?.get("code") == "rest_no_route") {
+                throw CoCartException(
+                    "CoCart Plus is required to use the batch endpoint",
+                    e.statusCode,
+                    mapOf("code" to "cocart_plugin_required")
+                )
+            }
+            throw e
+        }
+    }
+
     private fun buildUrl(endpoint: String, queryParams: Map<String, String>?): okhttp3.HttpUrl {
         val base = siteURL.trimEnd('/')
         val url = "$base/${options.restPrefix}/${options.namespace}/v2/$endpoint"
@@ -98,12 +145,13 @@ class HttpClient(
         auth.buildAuthHeader()?.let { builder.add(options.authHeaderName, it) }
 
         auth.cartKeyValue?.let { cartKey ->
-            builder.add("Cart-Key", cartKey)
-            builder.add("CoCart-API-Cart-Key", cartKey)
+            // Send only the cart-key header name the configured plugin actually allows.
+            val cartKeyHeader = if (options.mainPlugin == MainPlugin.LEGACY) "CoCart-API-Cart-Key" else "Cart-Key"
+            builder.add(cartKeyHeader, cartKey)
         }
 
         if (options.etag) {
-            etagCache[url.toString()]?.let { builder.add("If-None-Match", it) }
+            etagCache[url.toString()]?.let { builder.add("If-None-Match", it.etag) }
         }
 
         options.extraHeaders.forEach { (k, v) -> builder.add(k, v) }
@@ -135,6 +183,30 @@ class HttpClient(
         url: okhttp3.HttpUrl,
         body: Map<String, Any?>?
     ): CoCartResponse {
+        // De-duplicate identical concurrent GETs so simultaneous callers share one round trip.
+        if (method == "GET") {
+            val urlKey = url.toString()
+            val deferred = inFlightGetsMutex.withLock {
+                inFlightGets.getOrPut(urlKey) {
+                    ioScope.async { executeWithRetryOnce(method, url, body) }
+                }
+            }
+            try {
+                return deferred.await()
+            } finally {
+                inFlightGetsMutex.withLock {
+                    if (inFlightGets[urlKey] === deferred) inFlightGets.remove(urlKey)
+                }
+            }
+        }
+        return executeWithRetryOnce(method, url, body)
+    }
+
+    private suspend fun executeWithRetryOnce(
+        method: String,
+        url: okhttp3.HttpUrl,
+        body: Map<String, Any?>?
+    ): CoCartResponse {
         var lastException: Exception? = null
         repeat(options.maxRetries + 1) { attempt ->
             try {
@@ -142,13 +214,32 @@ class HttpClient(
             } catch (e: NetworkException) {
                 lastException = e
                 if (attempt < options.maxRetries) {
-                    // Exponential backoff: 500ms, 1000ms, ...
-                    val delay = 500L * (attempt + 1)
-                    kotlinx.coroutines.delay(delay)
+                    kotlinx.coroutines.delay(getRetryDelay(attempt + 1))
+                }
+            } catch (e: RateLimitException) {
+                lastException = e
+                if (attempt < options.maxRetries) {
+                    kotlinx.coroutines.delay(getRetryDelay(attempt + 1, e.retryAfter))
                 }
             }
         }
         throw lastException ?: NetworkException("Request failed after ${options.maxRetries} retries")
+    }
+
+    /**
+     * Exponential backoff: min(2^(attempt-1), 30) seconds, honoring a `Retry-After`
+     * header (capped at 60s) when present, with ±20% jitter applied on top so many
+     * clients retrying at once don't re-collide on the same schedule.
+     */
+    private fun getRetryDelay(attempt: Int, retryAfterSeconds: Long? = null): Long {
+        val baseSeconds = if (retryAfterSeconds != null) {
+            minOf(retryAfterSeconds, 60L).toDouble()
+        } else {
+            minOf(Math.pow(2.0, (attempt - 1).toDouble()), 30.0)
+        }
+        val base = baseSeconds * 1000.0
+        val jitter = 0.8 + Random.nextDouble() * 0.4
+        return (base * jitter).toLong()
     }
 
     private suspend fun executeOnce(
@@ -179,39 +270,55 @@ class HttpClient(
         emit(CoCartEvent.REQUEST, mapOf("method" to method, "url" to url.toString()))
 
         val response: Response
+        val parsedBody: Map<String, Any?>
+        val responseHeaders: Map<String, String>
+        val responseCode: Int
+        val cachedEntry: ETagCacheEntry?
+        val urlKey = url.toString()
+        val isNotModified: Boolean
         try {
             response = client.newCall(request).execute()
+            responseCode = response.code
+
+            // A 304 has no body — reuse the body/headers cached alongside the ETag that
+            // produced the match, so callers still get the actual data instead of an
+            // empty object. Falls back to an empty response if we have no cache entry.
+            isNotModified = responseCode == 304 && options.etag
+            cachedEntry = if (isNotModified) etagCache[urlKey] else null
+
+            if (cachedEntry != null) {
+                parsedBody = cachedEntry.body
+                responseHeaders = cachedEntry.headers
+            } else {
+                // Reading the body can itself time out (headers arrive, body streams
+                // slowly/never) — that must be treated the same as a connect/read
+                // failure on the initial call, not escape as a raw IOException.
+                val responseBodyString = response.body?.string() ?: "{}"
+                parsedBody = try {
+                    jsonToMap(JSONObject(responseBodyString))
+                } catch (e: Exception) {
+                    emptyMap()
+                }
+                responseHeaders = response.headers.toMap()
+            }
         } catch (e: IOException) {
             val ex = NetworkException("Network error: ${e.message}", e)
             emit(CoCartEvent.ERROR, mapOf("error" to ex.message))
             throw ex
         }
 
-        val responseCode = response.code
-
-        // Store ETag for future conditional requests
-        if (options.etag) {
-            response.header("ETag")?.let { etagCache[url.toString()] = it }
-        }
-
-        // 304 Not Modified — return empty response with status
-        if (responseCode == 304) {
-            emit(CoCartEvent.RESPONSE, mapOf("status" to 304, "cached" to true))
-            return@withContext CoCartResponse(emptyMap(), response.headers.toMap(), 304)
-        }
-
-        val responseBodyString = response.body?.string() ?: "{}"
-
-        val parsedBody: Map<String, Any?> = try {
-            jsonToMap(JSONObject(responseBodyString))
-        } catch (e: Exception) {
-            emptyMap()
-        }
-
-        val responseHeaders = response.headers.toMap()
-
         // Capture cart key from response
         auth.captureCartKey(parsedBody, responseHeaders)
+
+        // Cache the ETag + body from a fresh (non-304) response for future 304s
+        if (options.etag && !isNotModified) {
+            response.header("ETag")?.let { etagCache[urlKey] = ETagCacheEntry(it, parsedBody, responseHeaders) }
+        }
+
+        if (responseCode == 304) {
+            emit(CoCartEvent.RESPONSE, mapOf("status" to 304, "cached" to true))
+            return@withContext CoCartResponse(parsedBody, responseHeaders, 304)
+        }
 
         if (options.debug) {
             println("[CoCart] Response $responseCode")

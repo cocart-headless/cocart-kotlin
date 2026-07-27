@@ -2,6 +2,7 @@ package com.cocart.sdk
 
 import android.content.Context
 import com.cocart.sdk.auth.AuthManager
+import com.cocart.sdk.http.BatchRequestItem
 import com.cocart.sdk.http.CoCartEvent
 import com.cocart.sdk.http.CoCartResponse
 import com.cocart.sdk.http.HttpClient
@@ -137,6 +138,15 @@ class CoCart(
     // --- Events ---
 
     fun on(event: CoCartEvent, handler: (Map<String, Any?>) -> Unit) = http.on(event, handler)
+
+    // --- Batch ---
+
+    /**
+     * Dispatch multiple sub-requests in a single call via `{namespace}/batch`
+     * (requires CoCart Plus). Throws if the endpoint isn't available (i.e. the
+     * plugin isn't active).
+     */
+    suspend fun batch(requests: List<BatchRequestItem>): CoCartResponse = http.batch(requests)
 
     // --- Shorthand login/logout ---
 

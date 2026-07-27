@@ -114,7 +114,7 @@ println(cart.get("totals.total"))     // Dot-notation access to nested data
 | [Authentication](docs/authentication.md) | Guest, Basic Auth, JWT, 2FA, consumer keys |
 | [Cart API](docs/cart.md) | Add, update, remove items, coupons, shipping, fees |
 | [Products API](docs/products.md) | List, filter, search, categories, tags, brands |
-| [Account API](docs/account.md) | Customer profile, orders, downloads, and reviews |
+| [Account API](docs/account.md) | Customer profile, orders, downloads, and reviews — supported by the SDK, not yet released in the CoCart plugin |
 | [Sessions API](docs/sessions.md) | Admin sessions, storage adapters |
 | [Error Handling](docs/error-handling.md) | Error hierarchy, catching errors, common scenarios |
 | [Utilities](docs/utilities.md) | Currency formatter, response transformer |
