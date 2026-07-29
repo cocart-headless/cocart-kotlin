@@ -71,6 +71,9 @@ val response = client.cart().addItem(123, 2.0)
 
 // Shorthand
 val response = client.cart().add(123, 2.0)
+
+// A SKU also works — the server resolves it to a product ID
+val response = client.cart().addItem("BLUE-SHIRT-L", 1.0)
 ```
 
 ### Add with Options

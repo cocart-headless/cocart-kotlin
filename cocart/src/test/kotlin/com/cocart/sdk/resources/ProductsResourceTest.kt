@@ -23,6 +23,14 @@ class ProductsResourceTest {
         buildProducts().find(0)
     }
 
+    @Test
+    fun `find accepts a SKU`() = runTest {
+        val http = mockk<HttpClient>()
+        coEvery { http.get("products/PCT-2024") } returns mockResponse(mapOf("sku" to "PCT-2024"))
+        val result = buildProducts(http).find("PCT-2024")
+        assertNotNull(result)
+    }
+
     @Test(expected = ValidationException::class)
     fun `variation throws for invalid product id`() = runTest {
         buildProducts().variation(0, 10)

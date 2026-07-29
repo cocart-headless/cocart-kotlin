@@ -37,6 +37,31 @@ class CartResourceTest {
     }
 
     @Test
+    fun `addItem accepts a SKU`() = runTest {
+        val http = mockk<HttpClient>()
+        coEvery {
+            http.post("cart/add-item", mapOf("id" to "BLUE-SHIRT-L", "quantity" to 1.0))
+        } returns mockResponse(mapOf("item_key" to "abc"))
+        val cart = buildCart(http)
+
+        cart.addItem("BLUE-SHIRT-L", 1.0)
+    }
+
+    @Test
+    fun `addVariation accepts a SKU`() = runTest {
+        val http = mockk<HttpClient>()
+        coEvery {
+            http.post(
+                "cart/add-item",
+                mapOf("id" to "VAR-SKU-1", "quantity" to 1.0, "variation" to mapOf("attribute_pa_color" to "blue"))
+            )
+        } returns mockResponse(mapOf("item_key" to "abc"))
+        val cart = buildCart(http)
+
+        cart.addVariation("VAR-SKU-1", 1.0, mapOf("attribute_pa_color" to "blue"))
+    }
+
+    @Test
     fun `add is alias for addItem`() = runTest {
         val http = mockk<HttpClient>()
         val response = mockResponse(mapOf("items_count" to 1))
@@ -111,6 +136,16 @@ class CartResourceTest {
     @Test(expected = ValidationException::class)
     fun `addItems throws when no items given`() = runTest {
         buildCart().addItems(10, emptyMap())
+    }
+
+    @Test
+    fun `addItems accepts a SKU for the grouped product id`() = runTest {
+        val http = mockk<HttpClient>()
+        coEvery {
+            http.post("cart/add-items", mapOf("id" to "GROUPED-SKU", "quantity" to mapOf("11" to 2)))
+        } returns mockResponse()
+        val cart = buildCart(http)
+        cart.addItems("GROUPED-SKU", mapOf("11" to 2))
     }
 
     // --- updateItems / removeItems (per-item loop) ---

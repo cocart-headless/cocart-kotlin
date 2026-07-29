@@ -38,10 +38,40 @@ class CartResource(
         return http.post("cart/add-item", body)
     }
 
+    /** Add an item to the cart by SKU. Both resolve a non-numeric id before falling back to a 404. */
+    suspend fun addItem(
+        id: String,
+        qty: Double = 1.0,
+        options: Map<String, Any?>? = null
+    ): CoCartResponse {
+        validateProductId(id)
+        validateQuantity(qty)
+        val body = mutableMapOf<String, Any?>("id" to id, "quantity" to qty)
+        options?.forEach { (k, v) -> body[k] = v }
+        return http.post("cart/add-item", body)
+    }
+
     suspend fun add(id: Int, qty: Double = 1.0): CoCartResponse = addItem(id, qty)
+
+    suspend fun add(id: String, qty: Double = 1.0): CoCartResponse = addItem(id, qty)
 
     suspend fun addVariation(
         id: Int,
+        qty: Double = 1.0,
+        attributes: Map<String, String>
+    ): CoCartResponse {
+        validateProductId(id)
+        validateQuantity(qty)
+        return http.post("cart/add-item", mapOf(
+            "id" to id,
+            "quantity" to qty,
+            "variation" to attributes
+        ))
+    }
+
+    /** Add a variable product to the cart by SKU. See [addItem] for why a SKU is accepted here. */
+    suspend fun addVariation(
+        id: String,
         qty: Double = 1.0,
         attributes: Map<String, String>
     ): CoCartResponse {
@@ -75,8 +105,35 @@ class CartResource(
         )
     }
 
+    /**
+     * Add multiple children of a Grouped Product to the cart by the parent's
+     * SKU. See [addItem] for why a SKU is accepted for [groupedProductId] —
+     * note the child [items] map keys must still be numeric IDs, they are
+     * not resolved as SKUs server-side.
+     */
+    suspend fun addItems(groupedProductId: String, items: Map<String, Int>): CoCartResponse {
+        validateProductId(groupedProductId)
+        if (items.isEmpty()) throw ValidationException("addItems() requires at least one item.")
+        return http.post(
+            "cart/add-items",
+            mapOf("id" to groupedProductId, "quantity" to items)
+        )
+    }
+
     /** Overload accepting a list of `{id, quantity}` entries instead of a map. */
     suspend fun addItems(groupedProductId: Int, items: List<Map<String, Any?>>): CoCartResponse {
+        val quantity = items.associate { entry ->
+            val childId = entry["id"]?.toString()
+                ?: throw ValidationException("addItems() entries require an id.")
+            val qty = (entry["quantity"] as? Number)?.toInt()
+                ?: throw ValidationException("addItems() entries require a quantity.")
+            childId to qty
+        }
+        return addItems(groupedProductId, quantity)
+    }
+
+    /** Overload accepting a list of `{id, quantity}` entries instead of a map, by the parent's SKU. */
+    suspend fun addItems(groupedProductId: String, items: List<Map<String, Any?>>): CoCartResponse {
         val quantity = items.associate { entry ->
             val childId = entry["id"]?.toString()
                 ?: throw ValidationException("addItems() entries require an id.")

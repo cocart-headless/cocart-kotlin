@@ -22,6 +22,39 @@ class ValidatorsTest {
     }
 
     @Test
+    fun `validateProductId string overload passes for numeric string`() {
+        validateProductId("1")
+        validateProductId("999")
+    }
+
+    @Test
+    fun `validateProductId string overload accepts non-numeric string as potential SKU`() {
+        validateProductId("abc")
+        validateProductId("BLUE-SHIRT-L")
+        validateProductId("123ABC")
+    }
+
+    @Test(expected = ValidationException::class)
+    fun `validateProductId string overload throws for empty string`() {
+        validateProductId("")
+    }
+
+    @Test(expected = ValidationException::class)
+    fun `validateProductId string overload throws for zero`() {
+        validateProductId("0")
+    }
+
+    @Test(expected = ValidationException::class)
+    fun `validateProductId string overload throws for negative numeric string`() {
+        validateProductId("-1")
+    }
+
+    @Test(expected = ValidationException::class)
+    fun `validateProductId string overload throws for non-integer numeric string`() {
+        validateProductId("1.5")
+    }
+
+    @Test
     fun `validateQuantity passes for positive quantity`() {
         validateQuantity(1.0)
         validateQuantity(0.5)

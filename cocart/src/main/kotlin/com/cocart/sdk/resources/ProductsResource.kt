@@ -19,6 +19,16 @@ class ProductsResource(
         return http.get("products/$id")
     }
 
+    /**
+     * Get a single product by SKU. `GET products/{id}` accepts either the
+     * numeric product/variation ID or the product's SKU in the same path
+     * segment.
+     */
+    suspend fun find(sku: String): CoCartResponse {
+        validateProductId(sku)
+        return http.get("products/$sku")
+    }
+
     suspend fun findBySlug(slug: String): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {
             throw VersionException("findBySlug() is only available with CoCart Starter")

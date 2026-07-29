@@ -40,10 +40,15 @@ Common filter parameters:
 | `max_price` | Maximum price filter |
 | `search` | Search by keyword |
 
-## Find a Product by ID
+## Find a Product by ID or SKU
+
+`find()` accepts either the numeric product/variation ID or the product's SKU — either one works the same way.
 
 ```kotlin
 val response = client.products().find(123)
+
+// Or by SKU
+val response = client.products().find("PCT-2024")
 ```
 
 ## Find a Product by Slug
