@@ -38,9 +38,9 @@ class HttpClientTest {
     }
 
     @Test
-    fun `sends only Cart-Key header in BASIC mode`() = runTest {
+    fun `sends only Cart-Key header in STARTER mode`() = runTest {
         server.enqueue(MockResponse().setBody("{}").setResponseCode(200))
-        val client = buildClient(CoCartOptions(cartKey = "guest123", mainPlugin = MainPlugin.BASIC))
+        val client = buildClient(CoCartOptions(cartKey = "guest123", mainPlugin = MainPlugin.STARTER))
 
         client.get("cart")
 
@@ -65,7 +65,7 @@ class HttpClientTest {
     fun `304 response returns cached body and headers from the prior 2xx GET`() = runTest {
         server.enqueue(
             MockResponse()
-                .setBody("""{"items_count":3}""")
+                .setBody("""{"item_count":3}""")
                 .addHeader("ETag", "\"abc123\"")
                 .setResponseCode(200)
         )
@@ -88,7 +88,7 @@ class HttpClientTest {
     }
 
     @Test
-    fun `POST retries after a network-level failure and eventually succeeds`() = runTest {
+    fun `GET retries after a network-level failure and eventually succeeds`() = runTest {
         // First response never finishes within the client's read timeout, causing an
         // IOException (wrapped as NetworkException) that should trigger a retry.
         server.enqueue(MockResponse().setBodyDelay(500, TimeUnit.MILLISECONDS).setBody("{}").setResponseCode(200))
@@ -96,9 +96,25 @@ class HttpClientTest {
 
         val client = buildClient(CoCartOptions(maxRetries = 1, timeout = 100))
 
-        val response = client.post("cart/add-item", mapOf("id" to 1))
+        val response = client.get("cart")
         assertEquals(true, response.get("ok"))
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `POST is not sent again after a network-level failure, as it may have run`() = runTest {
+        server.enqueue(MockResponse().setBodyDelay(500, TimeUnit.MILLISECONDS).setBody("{}").setResponseCode(200))
+        server.enqueue(MockResponse().setBody("""{"ok":true}""").setResponseCode(200))
+
+        val client = buildClient(CoCartOptions(maxRetries = 2, timeout = 100))
+
+        try {
+            client.post("checkout", mapOf("payment_method" to "stripe"))
+            fail("The network failure should reach the caller")
+        } catch (e: com.cocart.sdk.errors.NetworkException) {
+            // Expected.
+        }
+        assertEquals(1, server.requestCount)
     }
 
     @Test
@@ -117,7 +133,7 @@ class HttpClientTest {
     fun `concurrent identical GETs are de-duplicated into one round trip`() = runTest {
         server.enqueue(
             MockResponse()
-                .setBody("""{"items_count":1}""")
+                .setBody("""{"item_count":1}""")
                 .setBodyDelay(200, TimeUnit.MILLISECONDS)
                 .setResponseCode(200)
         )

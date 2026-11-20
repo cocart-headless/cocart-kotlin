@@ -25,6 +25,12 @@ val response = client.sessions().all()
 val response = client.sessions().get("guest_abc123")
 ```
 
+## Get a Session's Items
+
+```kotlin
+val response = client.sessions().getItems("guest_abc123")
+```
+
 ## Delete a Session
 
 ```kotlin

@@ -103,6 +103,12 @@ class AuthManager(
         }
     }
 
+    /** Forget the cart key, in storage too, so the next request starts a new guest cart. */
+    suspend fun forgetCartKey() {
+        cartKey = null
+        storage.delete(options.storageKey)
+    }
+
     suspend fun clearSession() {
         cartKey = null
         jwtToken = null

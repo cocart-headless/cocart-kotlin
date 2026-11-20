@@ -88,6 +88,10 @@ val response = client.cart().addItem(123, 1.0, mapOf(
 ))
 ```
 
+The SDK sends the product ID and quantity as strings, which is what CoCart requires.
+
+With CoCart Plus, the options also carry a subscription plan (`"convert_to_sub"`), a gift recipient (`"recipient_email"`) or a warranty (`"item_data" to mapOf("warranty" to ...)`), and `changePlan(itemKey, value)` switches a cart item's plan. See [Extension Data](extension-data.md#sending-the-customers-choices).
+
 ### Add a Variable Product
 
 A **variable product** is a product with options like size or color. Specify which variation the customer chose using the `attributes` parameter:
@@ -231,14 +235,20 @@ client.cart().update(mapOf(
 // Apply a coupon
 client.cart().applyCoupon("SAVE10")
 
-// Remove a coupon
+// A coupon restricted to certain emails, before the cart knows the customer's
+client.cart().applyCoupon("VIP10", email = "jane@example.com")
+
+// Remove a coupon (the code is encoded, so spaces, %, # and ? are fine)
 client.cart().removeCoupon("SAVE10")
+
+// Remove every coupon
+client.cart().removeCoupons()
 
 // Get applied coupons
 val coupons = client.cart().getCoupons()
 
-// Validate applied coupons
-val check = client.cart().checkCoupons()
+// Validate applied coupons, including email restrictions
+val check = client.cart().checkCoupons(email = "jane@example.com")
 ```
 
 ## Customer
@@ -273,7 +283,19 @@ fields (same as leaving "ship to a different address" unchecked at checkout).
 
 ```kotlin
 // Get available shipping methods
-val methods = client.cart().getShippingMethods()
+val response = client.cart().getShippingMethods()
+
+// CoCart keys the packages by package ID under `shipping.packages`;
+// getShippingMethods() on the response lists them, each with its `rates`.
+for (pkg in response.getShippingMethods()) {
+    (pkg["rates"] as Map<*, *>).forEach { (rateId, rate) ->
+        rate as Map<*, *>
+        println("$rateId: ${rate["label"]} (${rate["cost"]})") // cost in minor units, e.g. "500"
+    }
+}
+
+// The whole field: total_packages, has_calculated_shipping, packages
+val shipping = response.getShipping()
 
 // Set the selected shipping rate for a package (CoCart Plus).
 // Omit packageId to apply the rate to every package.
@@ -295,12 +317,20 @@ instead of many. Requires CoCart Plus; throws if the endpoint isn't available.
 ```kotlin
 import com.cocart.sdk.http.BatchRequestItem
 
-client.batch(
+val response = client.batch(
     listOf(
-        BatchRequestItem(method = "POST", path = "/cocart/v2/cart/add-item", body = mapOf("id" to 123, "quantity" to 1)),
+        BatchRequestItem(method = "POST", path = "/cocart/v2/cart/add-item", body = mapOf("id" to "123", "quantity" to "1")),
         BatchRequestItem(method = "DELETE", path = "/cocart/v2/cart/item/abc123")
     )
 )
+```
+
+The cart returned is the one from the last sub-request that succeeded, with every
+sub-request's notices merged. A sub-request that failed shows up as an `error` notice,
+so read the notices to see what didn't apply:
+
+```kotlin
+val failed = response.getNotices()["error"] // e.g. ["Coupon \"SAVE1O\" does not exist!"]
 ```
 
 `CartResource.batchUpdateItems()` / `batchRemoveItems()` build the `BatchRequestItem`
@@ -310,14 +340,27 @@ list for you — see [Update Multiple Items](#update-multiple-items) and
 ## Fees (CoCart Plus)
 
 ```kotlin
-// Get all fees
-val fees = client.cart().getFees()
+// Get all fees. The cart keys them by fee ID; getFees() on the response lists them.
+val fees = client.cart().getFees().getFees() // [{name=Handling, fee=500}]
 
 // Add a fee
-client.cart().addFee("handling", 5.0, taxable = false)
+client.cart().addFee("Handling", 5.0, taxable = false)
+
+// Taxable, with a tax class
+client.cart().addFee("Gift wrapping", 4.99, taxable = true, taxClass = "reduced-rate")
 
 // Remove all fees
 client.cart().removeFees()
+```
+
+## Mini Cart and Removing All Items (CoCart Plus)
+
+```kotlin
+// A lighter cart response for a header or drawer
+val mini = client.cart().getMini()
+
+// Remove every item but keep the cart's coupons, fees and customer details
+client.cart().removeAllItems()
 ```
 
 ## ETag / Conditional Requests
@@ -355,7 +398,13 @@ response.getTotals()      // Map<String, Any?> — all totals
 response.getItemCount()   // Int — number of items
 response.getCartKey()     // String? — active cart key
 response.getCartHash()    // String? — hash for cache busting
-response.getNotices()     // List<Any?> — WooCommerce notices
+response.getNotices()     // Map<String, List<String>> — notices keyed by type: {success=[...], error=[...]}
+response.getShippingMethods() // List<Map<String, Any?>> — shipping packages, each with its rates
+response.getShipping()    // Map<String, Any?>? — the whole shipping field
+response.getFees()        // List<Map<String, Any?>> — fees (the cart keys them by fee ID)
+response.getExtensions()  // Map<String, Any?> — data plugins add, e.g. recurring_totals (see extension-data.md)
+response.getRateLimit()   // RateLimitInfo — the RateLimit-* headers (CoCart Plus)
+response.getHeader("Cart-Expiring") // String? — any header, ignoring the name's case
 response.getCurrency()    // Map<String, Any?>? — currency data
 response.getCacheStatus() // "HIT" | "MISS" | "SKIP" | null
 response.isNotModified()  // true if 304 Not Modified

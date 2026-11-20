@@ -88,7 +88,7 @@ The transformer receives a `CoCartResponse` and must return a `CoCartResponse`. 
 
 ## ETag Cache
 
-The SDK maintains an in-memory ETag cache to send `If-None-Match` headers on repeat requests. This is enabled by default.
+The SDK maintains an in-memory ETag cache to send `If-None-Match` headers on repeat requests. This is enabled by default. A response whose `Cache-Control` says `no-store` or `private` (CoCart Plus checkout, order and account responses) is never kept.
 
 ```kotlin
 // Disable ETags globally
@@ -123,6 +123,8 @@ val client = CoCart(context, "https://your-store.com")
 With debug enabled, each request prints:
 
 ```
-[CoCart] GET https://your-store.com/wp-json/cocart/v2/cart
+[CoCart] GET https://your-store.com/wp-json/cocart/v2/cart?cart_key=***
 [CoCart] Response 200
 ```
+
+Every query value is shown as `***`, so cart keys, order keys, emails and verification keys don't reach your logs. Event listeners (`client.on(...)`) get the full URL: don't forward it as it is.

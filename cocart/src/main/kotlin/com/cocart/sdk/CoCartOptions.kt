@@ -2,7 +2,8 @@ package com.cocart.sdk
 
 import com.cocart.sdk.storage.CoCartStorage
 
-enum class MainPlugin { BASIC, LEGACY }
+/** The CoCart plugin the store runs: [STARTER] (CoCart Starter) or [LEGACY] (the CoCart Community plugin, 4.x). */
+enum class MainPlugin { STARTER, LEGACY }
 
 data class CoCartOptions(
     val cartKey: String? = null,
@@ -23,7 +24,7 @@ data class CoCartOptions(
     val restPrefix: String = "wp-json",
     val namespace: String = "cocart",
 
-    val mainPlugin: MainPlugin = MainPlugin.BASIC,
+    val mainPlugin: MainPlugin = MainPlugin.STARTER,
 
     val authHeaderName: String = "Authorization",
 

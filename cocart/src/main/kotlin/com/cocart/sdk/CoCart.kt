@@ -8,6 +8,7 @@ import com.cocart.sdk.http.CoCartResponse
 import com.cocart.sdk.http.HttpClient
 import com.cocart.sdk.resources.AccountResource
 import com.cocart.sdk.resources.CartResource
+import com.cocart.sdk.resources.CheckoutResource
 import com.cocart.sdk.resources.JwtResource
 import com.cocart.sdk.resources.ProductsResource
 import com.cocart.sdk.resources.SessionsResource
@@ -31,6 +32,7 @@ class CoCart(
     private var sessionsInstance: SessionsResource? = null
     private var jwtInstance: JwtResource? = null
     private var accountInstance: AccountResource? = null
+    private var checkoutInstance: CheckoutResource? = null
 
     companion object {
         fun create(
@@ -52,15 +54,24 @@ class CoCart(
         sessionsInstance ?: SessionsResource(http, auth).also { sessionsInstance = it }
 
     fun jwt(): JwtResource =
-        jwtInstance ?: JwtResource(http, auth).also { jwtInstance = it }
+        jwtInstance ?: JwtResource(http, auth, options).also { jwtInstance = it }
 
     fun account(): AccountResource =
         accountInstance ?: AccountResource(http).also { accountInstance = it }
+
+    /** Checkout (CoCart Plus 2.0): place orders and take payment. */
+    fun checkout(): CheckoutResource =
+        checkoutInstance ?: CheckoutResource(http).also { checkoutInstance = it }
 
     // --- Guest Session ---
 
     fun getCartKey(): String? = auth.cartKey
 
+    /**
+     * Restore the cart key kept by the storage adapter from an earlier launch. The
+     * storage is read asynchronously, so call this once after creating the client,
+     * before the first cart request; without it, the app starts a new cart.
+     */
     suspend fun restoreSession() = auth.restoreSession()
 
     suspend fun clearSession() = auth.clearSession()

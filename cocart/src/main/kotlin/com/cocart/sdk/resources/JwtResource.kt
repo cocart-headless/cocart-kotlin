@@ -1,6 +1,7 @@
 package com.cocart.sdk.resources
 
 import android.util.Base64
+import com.cocart.sdk.CoCartOptions
 import com.cocart.sdk.auth.AuthManager
 import com.cocart.sdk.errors.AuthException
 import com.cocart.sdk.errors.CoCartException
@@ -13,38 +14,22 @@ import org.json.JSONObject
 
 class JwtResource(
     private val http: HttpClient,
-    private val auth: AuthManager
+    private val auth: AuthManager,
+    private val options: CoCartOptions = CoCartOptions()
 ) {
     private var autoRefreshEnabled = false
     private val refreshMutex = Mutex()
 
+    /**
+     * Log in with a username (or email) and password to get JWT tokens (`POST login`,
+     * with the CoCart JWT Authentication plugin).
+     *
+     * Throws [TwoFactorAuthRequiredException] when the customer has two-factor
+     * authentication on: call [loginWith2fa] with their code.
+     */
     suspend fun login(username: String, password: String): CoCartResponse {
-        val response = http.post(
-            "jwt/token",
-            mapOf("username" to username, "password" to password)
-        )
-
-        val code = response.get("code") as? String
-        if (code == "cocart_2fa_required") {
-            val data = response.get("data") as? Map<*, *>
-            @Suppress("UNCHECKED_CAST")
-            val providers = (data?.get("available_providers") as? List<String>) ?: emptyList()
-            val defaultProvider = data?.get("default_provider") as? String
-            val emailSent = data?.get("email_sent") as? Boolean ?: false
-            throw TwoFactorAuthRequiredException(
-                response.get("message") as? String ?: "Two-factor authentication required",
-                providers,
-                defaultProvider,
-                emailSent
-            )
-        }
-
-        val token = response.get("token") as? String
-        val refreshToken = response.get("refresh_token") as? String
-        if (token != null) {
-            auth.setJwtTokens(token, refreshToken)
-        }
-        return response
+        val response = http.post("login", mapOf("username" to username, "password" to password))
+        return storeTokens(response)
     }
 
     suspend fun loginWith2fa(
@@ -60,13 +45,15 @@ class JwtResource(
         )
         provider?.let { body["2fa_provider"] = it }
 
-        val response = http.post("jwt/token/2fa", body)
+        val response = http.post("login", body)
+        return storeTokens(response)
+    }
 
-        val token = response.get("token") as? String
-        val refreshToken = response.get("refresh_token") as? String
-        if (token != null) {
-            auth.setJwtTokens(token, refreshToken)
-        }
+    /** Keep the tokens a login sends under `extras` (`jwt_token`, `jwt_refresh`). */
+    private fun storeTokens(response: CoCartResponse): CoCartResponse {
+        val token = response.get("extras.jwt_token") as? String
+            ?: throw AuthException("The login response has no JWT token. Is the CoCart JWT Authentication plugin active?", 0, "cocart_jwt_missing")
+        auth.setJwtTokens(token, response.get("extras.jwt_refresh") as? String)
         return response
     }
 
@@ -74,17 +61,18 @@ class JwtResource(
         val refreshToken = auth.getRefreshToken()
             ?: throw AuthException("No refresh token available")
 
-        val response = http.post("jwt/token/refresh", mapOf("refresh_token" to refreshToken))
+        val response = http.postRaw("${options.namespace}/jwt/refresh-token", mapOf("refresh_token" to refreshToken))
 
         val token = response.get("token") as? String
         if (token != null) {
-            auth.setJwtToken(token)
+            auth.setJwtTokens(token, response.get("refresh_token") as? String ?: refreshToken)
         }
         response
     }
 
+    /** Check the JWT token with the server (`POST {namespace}/jwt/validate-token`). */
     suspend fun validate(): CoCartResponse {
-        return http.post("jwt/token/validate")
+        return http.postRaw("${options.namespace}/jwt/validate-token")
     }
 
     fun isTokenExpired(leeway: Long = 0): Boolean {
@@ -148,7 +136,13 @@ class JwtResource(
         }
     }
 
+    /** Log out on the server (`POST logout`), then clear the tokens and cart key. */
     suspend fun logout() {
+        try {
+            http.post("logout")
+        } catch (e: CoCartException) {
+            // Continue even if the server call fails.
+        }
         auth.clearSession()
     }
 }

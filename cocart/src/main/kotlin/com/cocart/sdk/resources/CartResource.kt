@@ -10,6 +10,7 @@ import com.cocart.sdk.http.CoCartResponse
 import com.cocart.sdk.http.HttpClient
 import com.cocart.sdk.validation.validateProductId
 import com.cocart.sdk.validation.validateQuantity
+import java.net.URLEncoder
 
 class CartResource(
     private val http: HttpClient,
@@ -26,6 +27,16 @@ class CartResource(
         return http.get("cart", mapOf(fieldParam to fields.joinToString(",")))
     }
 
+    /**
+     * Add an item to the cart.
+     *
+     * [options] holds the request's other fields: `variation` (a variable product's
+     * attributes), `item_data` (custom data), `email`, `price` and `return_item`, and the
+     * choices for CoCart Plus's supported plugins: `convert_to_sub` (a subscription plan's
+     * `value`, `"0"` for one-time), `recipient_email` (a gift's recipient) and
+     * `item_data` `{"warranty": key}` (a warranty option). Other plugins' fields pass
+     * through as given.
+     */
     suspend fun addItem(
         id: Int,
         qty: Double = 1.0,
@@ -33,7 +44,7 @@ class CartResource(
     ): CoCartResponse {
         validateProductId(id)
         validateQuantity(qty)
-        val body = mutableMapOf<String, Any?>("id" to id, "quantity" to qty)
+        val body = mutableMapOf<String, Any?>("id" to id.toString(), "quantity" to quantityString(qty))
         options?.forEach { (k, v) -> body[k] = v }
         return http.post("cart/add-item", body)
     }
@@ -46,7 +57,7 @@ class CartResource(
     ): CoCartResponse {
         validateProductId(id)
         validateQuantity(qty)
-        val body = mutableMapOf<String, Any?>("id" to id, "quantity" to qty)
+        val body = mutableMapOf<String, Any?>("id" to id.toString(), "quantity" to quantityString(qty))
         options?.forEach { (k, v) -> body[k] = v }
         return http.post("cart/add-item", body)
     }
@@ -63,8 +74,8 @@ class CartResource(
         validateProductId(id)
         validateQuantity(qty)
         return http.post("cart/add-item", mapOf(
-            "id" to id,
-            "quantity" to qty,
+            "id" to id.toString(),
+            "quantity" to quantityString(qty),
             "variation" to attributes
         ))
     }
@@ -78,8 +89,8 @@ class CartResource(
         validateProductId(id)
         validateQuantity(qty)
         return http.post("cart/add-item", mapOf(
-            "id" to id,
-            "quantity" to qty,
+            "id" to id.toString(),
+            "quantity" to quantityString(qty),
             "variation" to attributes
         ))
     }
@@ -101,7 +112,7 @@ class CartResource(
         if (items.isEmpty()) throw ValidationException("addItems() requires at least one item.")
         return http.post(
             "cart/add-items",
-            mapOf("id" to groupedProductId, "quantity" to items)
+            mapOf("id" to groupedProductId.toString(), "quantity" to items.mapValues { it.value.toString() })
         )
     }
 
@@ -116,7 +127,7 @@ class CartResource(
         if (items.isEmpty()) throw ValidationException("addItems() requires at least one item.")
         return http.post(
             "cart/add-items",
-            mapOf("id" to groupedProductId, "quantity" to items)
+            mapOf("id" to groupedProductId.toString(), "quantity" to items.mapValues { it.value.toString() })
         )
     }
 
@@ -150,7 +161,7 @@ class CartResource(
         options: Map<String, Any?>? = null
     ): CoCartResponse {
         validateQuantity(qty)
-        val body = mutableMapOf<String, Any?>("quantity" to qty)
+        val body = mutableMapOf<String, Any?>("quantity" to quantityString(qty))
         options?.forEach { (k, v) -> body[k] = v }
         return http.post("cart/item/$itemKey", body)
     }
@@ -237,7 +248,7 @@ class CartResource(
             BatchRequestItem(
                 method = "POST",
                 path = batchPath("cart/item/$itemKey"),
-                body = mapOf("quantity" to qty)
+                body = mapOf("quantity" to quantityString(qty))
             )
         }
         return http.batch(requests)
@@ -245,10 +256,19 @@ class CartResource(
 
     private fun batchPath(path: String): String = "/${options.namespace}/v2/${path.trimStart('/')}"
 
-    suspend fun restoreItem(itemKey: String): CoCartResponse =
-        http.post("cart/item/$itemKey/restore")
+    /** CoCart takes quantities as strings: "2", or "1.5" for a product sold by weight. */
+    private fun quantityString(qty: Double): String =
+        if (qty % 1.0 == 0.0) qty.toLong().toString() else qty.toString()
 
-    suspend fun getRemovedItems(): CoCartResponse = http.get("cart/items/removed")
+    /** The cart with only the given field, e.g. `fees`, using the configured plugin's filter parameter. */
+    private suspend fun getField(field: String): CoCartResponse = getFiltered(listOf(field))
+
+    /** Restore a removed item to the cart (`PUT cart/item/{item_key}`). */
+    suspend fun restoreItem(itemKey: String): CoCartResponse =
+        http.put("cart/item/$itemKey")
+
+    /** Items removed from the cart that can be restored. */
+    suspend fun getRemovedItems(): CoCartResponse = getField("removed_items")
 
     suspend fun clear(): CoCartResponse = http.post("cart/clear")
 
@@ -257,6 +277,35 @@ class CartResource(
     suspend fun calculate(): CoCartResponse = http.post("cart/calculate")
 
     suspend fun update(data: Map<String, Any?>): CoCartResponse = http.post("cart/update", data)
+
+    /**
+     * Switch a cart item to another subscription plan, or to one-time with `"0"`
+     * (CoCart Plus).
+     *
+     * The options are in the item's `extensions.subscription_schemes`; pass one's
+     * `value`. Posts the `update-item-schema` callback on `POST cart/update`.
+     *
+     * @param itemKey The cart item's key.
+     * @param value   The option's `value`.
+     */
+    suspend fun changePlan(itemKey: String, value: String): CoCartResponse {
+        if (itemKey.isEmpty()) throw ValidationException("changePlan() requires an item key.")
+        return update(mapOf(
+            "namespace" to "update-item-schema",
+            "item_key" to itemKey,
+            "convert_to_sub" to value
+        ))
+    }
+
+    /** A lighter cart response for a mini cart (CoCart Plus). */
+    suspend fun getMini(params: Map<String, String>? = null): CoCartResponse =
+        http.get("cart/mini", params)
+
+    /**
+     * Remove every item but keep the cart's coupons, fees and customer details
+     * (CoCart Plus, `DELETE cart/items`). [clear] empties the whole cart.
+     */
+    suspend fun removeAllItems(): CoCartResponse = http.delete("cart/items")
 
     suspend fun getTotals(formatted: Boolean = false): CoCartResponse =
         http.get("cart/totals", if (formatted) mapOf("html" to "true") else null)
@@ -270,15 +319,42 @@ class CartResource(
 
     // CoCart Plus methods
 
-    suspend fun applyCoupon(code: String): CoCartResponse =
-        http.post("cart/coupon", mapOf("coupon" to code))
+    /**
+     * Apply a coupon (CoCart Plus). Pass the customer's [email] for coupons restricted
+     * to certain emails when the cart doesn't know it yet.
+     */
+    suspend fun applyCoupon(code: String, email: String? = null): CoCartResponse {
+        val body = mutableMapOf<String, Any?>("code" to code)
+        email?.takeIf { it.isNotEmpty() }?.let { body["email"] = it }
+        return http.post("cart/apply-coupon", body)
+    }
 
+    /**
+     * Remove a coupon (CoCart Plus).
+     *
+     * The code goes in the URL path, so it's encoded: codes can contain spaces, `%`,
+     * `#`, `?` and other characters. A code containing `/` can't be removed by code
+     * (CoCart Plus matches any path segment without `/`); [removeCoupons] removes all
+     * of them instead.
+     */
     suspend fun removeCoupon(code: String): CoCartResponse =
-        http.delete("cart/coupon/$code")
+        http.delete("cart/coupons/${encodePathSegment(code)}")
 
-    suspend fun getCoupons(): CoCartResponse = http.get("cart/coupons")
+    /** Remove every coupon from the cart (CoCart Plus). */
+    suspend fun removeCoupons(): CoCartResponse = http.delete("cart/coupons")
 
-    suspend fun checkCoupons(): CoCartResponse = http.get("cart/coupons/check")
+    /** The coupons applied to the cart. */
+    suspend fun getCoupons(): CoCartResponse = getField("coupons")
+
+    /**
+     * Check the applied coupons are still valid (CoCart Plus). Pass the customer's
+     * [email] to check coupons restricted to certain emails.
+     */
+    suspend fun checkCoupons(email: String? = null): CoCartResponse =
+        http.get("cart/coupons/validate", email?.takeIf { it.isNotEmpty() }?.let { mapOf("email" to it) })
+
+    private fun encodePathSegment(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     /**
      * Update customer billing (and optionally shipping) address on the cart.
@@ -313,9 +389,15 @@ class CartResource(
         return http.post("cart/update", body)
     }
 
-    suspend fun getCustomer(): CoCartResponse = http.get("cart/customer")
+    /** The customer's details on the cart. */
+    suspend fun getCustomer(): CoCartResponse = getField("customer")
 
-    suspend fun getShippingMethods(): CoCartResponse = http.get("cart/shipping-methods")
+    /**
+     * The cart's shipping packages and their rates. Read them with
+     * [CoCartResponse.getShippingMethods] (a list of packages) or
+     * [CoCartResponse.getShipping] (the whole field).
+     */
+    suspend fun getShippingMethods(): CoCartResponse = getField("shipping")
 
     /**
      * Select a shipping rate for a package (CoCart Plus).
@@ -349,30 +431,45 @@ class CartResource(
         return calculate()
     }
 
+    /** The cart's fees. Read them as a list with [CoCartResponse.getFees]. */
     suspend fun getFees(): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {
             throw VersionException("getFees() requires CoCart Plus")
         }
-        return http.get("cart/fees")
+        return getField("fees")
     }
 
+    /**
+     * Add a fee to the cart (CoCart Plus).
+     *
+     * @param taxClass The tax class to use when the fee is taxable.
+     */
     suspend fun addFee(
         name: String,
         amount: Double,
-        taxable: Boolean = false
+        taxable: Boolean = false,
+        taxClass: String? = null
     ): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {
             throw VersionException("addFee() requires CoCart Plus")
         }
-        return http.post("cart/fees", mapOf("name" to name, "amount" to amount, "taxable" to taxable))
+        // CoCart Plus takes the amount as a string (a number is rejected as rest_invalid_param).
+        val body = mutableMapOf<String, Any?>("name" to name, "amount" to amountString(amount), "taxable" to taxable)
+        taxClass?.takeIf { it.isNotEmpty() }?.let { body["tax_class"] = it }
+        return http.post("cart/add-fee", body)
     }
 
+    /** Remove all fees from the cart (CoCart Plus). */
     suspend fun removeFees(): CoCartResponse {
         if (options.mainPlugin == MainPlugin.LEGACY) {
             throw VersionException("removeFees() requires CoCart Plus")
         }
-        return http.delete("cart/fees")
+        return http.post("cart/remove-fees")
     }
 
-    suspend fun getCrossSells(): CoCartResponse = http.get("cart/cross-sells")
+    private fun amountString(amount: Double): String =
+        if (amount % 1.0 == 0.0) amount.toLong().toString() else amount.toString()
+
+    /** Cross-sell products for the items in the cart. */
+    suspend fun getCrossSells(): CoCartResponse = getField("cross_sells")
 }

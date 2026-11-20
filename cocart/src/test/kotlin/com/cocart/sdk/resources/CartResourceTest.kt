@@ -40,7 +40,7 @@ class CartResourceTest {
     fun `addItem accepts a SKU`() = runTest {
         val http = mockk<HttpClient>()
         coEvery {
-            http.post("cart/add-item", mapOf("id" to "BLUE-SHIRT-L", "quantity" to 1.0))
+            http.post("cart/add-item", mapOf("id" to "BLUE-SHIRT-L", "quantity" to "1"))
         } returns mockResponse(mapOf("item_key" to "abc"))
         val cart = buildCart(http)
 
@@ -53,7 +53,7 @@ class CartResourceTest {
         coEvery {
             http.post(
                 "cart/add-item",
-                mapOf("id" to "VAR-SKU-1", "quantity" to 1.0, "variation" to mapOf("attribute_pa_color" to "blue"))
+                mapOf("id" to "VAR-SKU-1", "quantity" to "1", "variation" to mapOf("attribute_pa_color" to "blue"))
             )
         } returns mockResponse(mapOf("item_key" to "abc"))
         val cart = buildCart(http)
@@ -64,7 +64,7 @@ class CartResourceTest {
     @Test
     fun `add is alias for addItem`() = runTest {
         val http = mockk<HttpClient>()
-        val response = mockResponse(mapOf("items_count" to 1))
+        val response = mockResponse(mapOf("item_count" to 1))
         coEvery { http.post(any(), any(), any()) } returns response
         val cart = buildCart(http)
         val result = cart.add(10, 1.0)
@@ -88,10 +88,10 @@ class CartResourceTest {
     }
 
     @Test
-    fun `getFiltered uses _fields param in BASIC mode`() = runTest {
+    fun `getFiltered uses _fields param in STARTER mode`() = runTest {
         val http = mockk<HttpClient>()
         coEvery { http.get("cart", mapOf("_fields" to "items,totals")) } returns mockResponse()
-        val cart = buildCart(http, CoCartOptions(mainPlugin = MainPlugin.BASIC))
+        val cart = buildCart(http, CoCartOptions(mainPlugin = MainPlugin.STARTER))
         cart.getFiltered(listOf("items", "totals"))
     }
 
@@ -117,7 +117,7 @@ class CartResourceTest {
     fun `addItems posts grouped product id and child quantities map`() = runTest {
         val http = mockk<HttpClient>()
         coEvery {
-            http.post("cart/add-items", mapOf("id" to 10, "quantity" to mapOf("11" to 2, "12" to 1)))
+            http.post("cart/add-items", mapOf("id" to "10", "quantity" to mapOf("11" to "2", "12" to "1")))
         } returns mockResponse()
         val cart = buildCart(http)
         cart.addItems(10, mapOf("11" to 2, "12" to 1))
@@ -127,7 +127,7 @@ class CartResourceTest {
     fun `addItems accepts list of id-quantity entries`() = runTest {
         val http = mockk<HttpClient>()
         coEvery {
-            http.post("cart/add-items", mapOf("id" to 10, "quantity" to mapOf("11" to 2)))
+            http.post("cart/add-items", mapOf("id" to "10", "quantity" to mapOf("11" to "2")))
         } returns mockResponse()
         val cart = buildCart(http)
         cart.addItems(10, listOf(mapOf("id" to 11, "quantity" to 2)))
@@ -142,7 +142,7 @@ class CartResourceTest {
     fun `addItems accepts a SKU for the grouped product id`() = runTest {
         val http = mockk<HttpClient>()
         coEvery {
-            http.post("cart/add-items", mapOf("id" to "GROUPED-SKU", "quantity" to mapOf("11" to 2)))
+            http.post("cart/add-items", mapOf("id" to "GROUPED-SKU", "quantity" to mapOf("11" to "2")))
         } returns mockResponse()
         val cart = buildCart(http)
         cart.addItems("GROUPED-SKU", mapOf("11" to 2))
@@ -153,15 +153,15 @@ class CartResourceTest {
     @Test
     fun `updateItems loops updateItem per entry and returns last response`() = runTest {
         val http = mockk<HttpClient>()
-        coEvery { http.post("cart/item/aaa", mapOf("quantity" to 2.0)) } returns mockResponse(mapOf("items_count" to 1))
-        coEvery { http.post("cart/item/bbb", mapOf("quantity" to 3.0)) } returns mockResponse(mapOf("items_count" to 2))
+        coEvery { http.post("cart/item/aaa", mapOf("quantity" to "2")) } returns mockResponse(mapOf("item_count" to 1))
+        coEvery { http.post("cart/item/bbb", mapOf("quantity" to "3")) } returns mockResponse(mapOf("item_count" to 2))
         val cart = buildCart(http)
 
         val result = cart.updateItems(linkedMapOf("aaa" to 2.0, "bbb" to 3.0))
 
         assertEquals(2, result.getItemCount())
-        coVerify(exactly = 1) { http.post("cart/item/aaa", mapOf("quantity" to 2.0)) }
-        coVerify(exactly = 1) { http.post("cart/item/bbb", mapOf("quantity" to 3.0)) }
+        coVerify(exactly = 1) { http.post("cart/item/aaa", mapOf("quantity" to "2")) }
+        coVerify(exactly = 1) { http.post("cart/item/bbb", mapOf("quantity" to "3")) }
     }
 
     @Test(expected = ValidationException::class)
@@ -172,8 +172,8 @@ class CartResourceTest {
     @Test
     fun `removeItems loops removeItem per key and returns last response`() = runTest {
         val http = mockk<HttpClient>()
-        coEvery { http.delete("cart/item/aaa", null) } returns mockResponse(mapOf("items_count" to 1))
-        coEvery { http.delete("cart/item/bbb", null) } returns mockResponse(mapOf("items_count" to 0))
+        coEvery { http.delete("cart/item/aaa", null) } returns mockResponse(mapOf("item_count" to 1))
+        coEvery { http.delete("cart/item/bbb", null) } returns mockResponse(mapOf("item_count" to 0))
         val cart = buildCart(http)
 
         val result = cart.removeItems(listOf("aaa", "bbb"))
@@ -204,7 +204,7 @@ class CartResourceTest {
                     BatchRequestItem(
                         method = "POST",
                         path = "/cocart/v2/cart/item/aaa",
-                        body = mapOf("quantity" to 2.0)
+                        body = mapOf("quantity" to "2")
                     )
                 )
             )

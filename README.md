@@ -41,8 +41,8 @@ See [SUPPORT.md](SUPPORT.md) for our versioning policy, supported Android API le
 - **Response transformer** — custom processing of every API response
 - **Configurable auth header name** — for proxies that strip `Authorization`
 - **JWT authentication** with auto-refresh and 2FA support
-- **ETag / conditional requests** — reduced bandwidth on repeat requests
-- **Retry with backoff** — configurable automatic retry on transient failures
+- **ETag / conditional requests** — reduced bandwidth on repeat requests (responses marked `no-store` or `private` are never cached)
+- **Retry with backoff** — configurable automatic retry on transient failures, honouring `RateLimit-Retry-After`
 - **Legacy CoCart plugin support** — version-aware endpoint guards
 
 ## Installation
@@ -113,11 +113,13 @@ println(cart.get("totals.total"))     // Dot-notation access to nested data
 | [Configuration & Setup](docs/installation.md) | Options, fluent config, white-labelling, legacy plugin support |
 | [Authentication](docs/authentication.md) | Guest, Basic Auth, JWT, 2FA, consumer keys |
 | [Cart API](docs/cart.md) | Add, update, remove items, coupons, shipping, fees |
-| [Products API](docs/products.md) | List, filter, search, categories, tags, brands |
-| [Account API](docs/account.md) | Customer profile, orders, downloads, and reviews — supported by the SDK, not yet released in the CoCart plugin |
+| [Products API](docs/products.md) | List, filter, search, sort, variations, categories, tags, attributes, brands, reviews, shipping rates, SEO |
+| [Account API](docs/account.md) | Registration, customer profile, password, address, orders, downloads, reviews and subscriptions — supported by the SDK, not yet released in the CoCart plugin |
+| [Checkout API](docs/checkout.md) | Place orders and take payment, 3D Secure, payments made outside the checkout, saved payment methods, the thank-you page, paying for unpaid orders, finding out how an order ended (CoCart Plus 2.0) |
 | [Sessions API](docs/sessions.md) | Admin sessions, storage adapters |
-| [Error Handling](docs/error-handling.md) | Error hierarchy, catching errors, common scenarios |
+| [Error Handling](docs/error-handling.md) | Error hierarchy, catching errors, fields at fault, common scenarios, expired carts, rate limits |
 | [Utilities](docs/utilities.md) | Currency formatter, response transformer |
+| [Extension Data](docs/extension-data.md) | Plugin data under `extensions` (CoCart Plus integrations), and sending a plan, gift or warranty choice |
 
 ## Features
 
@@ -165,13 +167,40 @@ client.cart().addItem(-1, 0.0)
 // ValidationException: "Product ID must be a positive integer"
 ```
 
+### Checkout (CoCart Plus 2.0)
+
+```kotlin
+// On the review screen: snapshots the total the customer sees.
+val checkout = client.checkout().get()
+
+// Then, when the customer pays. payment_data carries the gateway's tokens only.
+val result = client.checkout().placeOrder(mapOf(
+    "billing_address" to billingAddress,
+    "payment_method" to "stripe",
+    "payment_data" to mapOf("wc-stripe-payment-method" to paymentMethod.id),
+))
+
+when {
+    result.isComplete -> showThankYou(client.checkout().getOrderReceived(result.orderId!!, result.orderKey!!))
+    result.isAwaitingPayment -> payOutsideCheckout(result)   // a wallet, a voucher, BLIK…
+    result.needsConfirmation -> confirmCard(result.clientSecret!!) // then place the order again
+    result.needsRedirect -> openOffSite(result.redirectUrl!!)      // then confirmReturn()
+    result.isPending -> confirmAgainShortly()
+    else -> showError(result.message)                              // plain text; pay again with payForOrder()
+}
+```
+
+`result.code` is `order_placed`, `action_required`, `payment_pending` or `payment_failed`. When no answer comes back, or another request is still paying (`cocart_payment_in_progress`), `placeOrder()` throws `CheckoutOutcomeUnknownException`, and `checkout().getStatus(e.checkoutId).code` says `order_placed`, `payment_required`, `in_progress` or `not_placed`. Saved payment methods come from `getSavedPaymentMethods()`, each with a `label` such as "Visa ending in 4242". See [Checkout API](docs/checkout.md).
+
 ### Event System
 
 ```kotlin
 client.on(CoCartEvent.REQUEST)  { payload -> println("${payload["method"]} ${payload["url"]}") }
-client.on(CoCartEvent.RESPONSE) { payload -> println("Status: ${payload["status"]}") }
+client.on(CoCartEvent.RESPONSE) { payload -> println("Status: ${payload["status"]}") } // payload["response"] is the CoCartResponse
 client.on(CoCartEvent.ERROR)    { payload -> println("Error: ${payload["error"]}") }
 ```
+
+The `url` in an event is the full URL, query string included: it can carry the cart key, an order key or an email. Don't forward it as it is (to analytics, for example). Debug output (`debug = true`) shows every query value as `***`.
 
 ### Encrypted Session Storage
 

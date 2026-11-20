@@ -41,6 +41,8 @@ class MyViewModel : ViewModel() {
 }
 ```
 
+The storage is read asynchronously, so the client can't pick the key up while it's being created: call `restoreSession()` before the first cart request, or the app starts a new cart. If the stored cart has expired in the meantime, the client replaces it with a new one on its own (see [Error Handling](error-handling.md#expired-cart-key)).
+
 ### Resuming with a Known Cart Key
 
 If you already have a cart key, pass it directly:
@@ -250,7 +252,7 @@ If multiple authentication methods are configured, the SDK uses this priority or
 1. **JWT Token** (`jwtToken`) — `Authorization: Bearer <token>`
 2. **Basic Auth** (`username` / `password`) — `Authorization: Basic <base64>`
 3. **Consumer Keys** (`consumerKey` / `consumerSecret`) — `Authorization: Basic <base64>`
-4. **Guest** — no auth header; cart key sent via query param and one header — `Cart-Key` for `MainPlugin.BASIC`, `CoCart-API-Cart-Key` for `MainPlugin.LEGACY`
+4. **Guest** — no auth header; cart key sent via query param and one header — `Cart-Key` for `MainPlugin.STARTER`, `CoCart-API-Cart-Key` for `MainPlugin.LEGACY`
 
 ### Switching Auth at Runtime
 

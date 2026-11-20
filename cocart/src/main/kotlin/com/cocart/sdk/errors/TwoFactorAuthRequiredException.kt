@@ -5,4 +5,5 @@ class TwoFactorAuthRequiredException(
     val availableProviders: List<String> = emptyList(),
     val defaultProvider: String? = null,
     val emailSent: Boolean = false,
-) : AuthException(message, 401, "cocart_2fa_required")
+    data: Map<String, Any?>? = null,
+) : AuthException(message, 401, "cocart_2fa_required", data)

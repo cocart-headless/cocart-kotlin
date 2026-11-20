@@ -53,8 +53,8 @@ class CoCartResponseTest {
     }
 
     @Test
-    fun `getItemCount reads items_count`() {
-        val r = response(mapOf("items_count" to 3))
+    fun `getItemCount reads item_count`() {
+        val r = response(mapOf("item_count" to 3))
         assertEquals(3, r.getItemCount())
     }
 

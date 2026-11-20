@@ -13,7 +13,8 @@ CoCartException (base)                    — any API error
 ├── ValidationException                   — bad input (400)
 ├── VersionException                      — method requires CoCart Starter (legacy mode)
 ├── NetworkException                      — connection / timeout failures
-└── RateLimitException                    — 429 Too Many Requests
+├── RateLimitException                    — 429 Too Many Requests
+└── CheckoutOutcomeUnknownException       — placeOrder() got no answer, or cocart_payment_in_progress
 ```
 
 All exceptions extend `CoCartException`, which extends `Exception`. Use `is` checks to handle different types:
@@ -60,9 +61,19 @@ All exceptions provide these properties:
 
 | Property | Type | Description |
 |---|---|---|
-| `message` | `String` | Human-readable error message from the API |
+| `message` | `String` | The request's method and route, the API's message and its code, e.g. `POST /cocart/v2/checkout: Please enter a valid postcode. [cocart_invalid_address_fields]`. The route never includes the query string |
 | `statusCode` | `Int?` | HTTP status code (400, 401, 403, 429, 500, etc.) |
 | `data` | `Map<String, Any?>?` | Full API response body for debugging |
+
+And these methods:
+
+| Method | Returns | Description |
+|---|---|---|
+| `errorCode()` | `String?` | The API error code, e.g. `cocart_item_not_in_cart` |
+| `getCart()` | `Map<String, Any?>?` | The cart sent with the error (see [Item No Longer in the Cart](#item-no-longer-in-the-cart)), or `null` |
+| `getFields()` | `Map<String, String>` | Every field at fault, as path to message (`data.fields`), e.g. `billing.postcode` to "Enter a valid postcode.". Empty when the error has none |
+| `getField()` | `String?` | The first field at fault (`data.field`), or `null` |
+| `getReason()` | `String?` | The underlying plugin's own reason, when there is one (`data.reason`), or `null` |
 
 `AuthException` also provides:
 
@@ -74,7 +85,7 @@ All exceptions provide these properties:
 
 | Property | Type | Description |
 |---|---|---|
-| `retryAfter` | `Long?` | Seconds to wait before retrying (from `Retry-After` header) |
+| `retryAfter` | `Long?` | Seconds to wait before retrying, from the `RateLimit-Retry-After` header CoCart Plus sends, or `Retry-After` |
 
 `TwoFactorAuthRequiredException` also provides:
 
@@ -141,9 +152,26 @@ See [Authentication](authentication.md#auto-refresh) for details.
 | 401 | `TwoFactorAuthRequiredException` | Login succeeded but a 2FA code is required |
 | 403 | `AuthException` | Expired JWT token, insufficient permissions |
 | 404 | `CoCartException` | Endpoint not found, item key not found |
+| 409 | `CoCartException` | A refused state: an order already paid (`cocart_order_invalid_status`), a payment still running (`cocart_payment_in_progress`), a changed total (`cocart_checkout_total_mismatch`) |
 | 429 | `RateLimitException` | Too many requests |
-| 500 | `CoCartException` | Server error |
+| 5xx | `CoCartException` | Server error |
 | Network failure | `NetworkException` | No connection, DNS failure, timeout |
+
+A `409`, a `429` or a `5xx` is never a `ValidationException`, whatever its code says.
+
+## Fields at Fault
+
+CoCart Plus reports every field at fault at once (checkout, account details, addresses):
+
+```kotlin
+try {
+    client.checkout().update(mapOf("billing_address" to address))
+} catch (e: CoCartException) {
+    e.getFields().forEach { (field, message) -> showFieldError(field, message) } // "billing.postcode" to "Enter a valid postcode."
+    e.getField()  // the first one, or null
+    e.getReason() // the plugin's own reason, or null
+}
+```
 
 ## Client-Side Validation Exceptions
 
@@ -192,7 +220,7 @@ try {
 try {
     client.cart().addItem(999999, 1.0)
 } catch (e: ValidationException) {
-    // e.message => "Product not found"
+    // e.message => "POST /cocart/v2/cart/add-item: Product not found. [cocart_product_not_found]"
 }
 ```
 
@@ -259,7 +287,43 @@ try {
 }
 ```
 
+### Expired Cart Key
+
+CoCart Starter 5 refuses a cart key with no cart session on every cart route (`404 cocart_invalid_cart`), for example after the cart expired. The client then forgets the stored key (in its storage too) and retries the request once as a new guest, so this error doesn't reach your code for a guest; a fresh cart key comes back as usual.
+
+### Item No Longer in the Cart
+
+Getting, updating or removing an item whose key isn't in the cart (for example, another tab already removed it) fails with `404 cocart_item_not_in_cart`. Since CoCart Starter 5 the error carries the cart as it is now, so you can show it without fetching the cart again:
+
+```kotlin
+try {
+    client.cart().updateItem(itemKey, 2.0)
+} catch (e: CoCartException) {
+    if (e.errorCode() == "cocart_item_not_in_cart") {
+        e.getCart()?.let { render(it) } // null with CoCart 4.x
+    }
+}
+```
+
+### Quantity Reduced to the Maximum
+
+Adding more than the purchase limit or the stock allows isn't an error: CoCart adds the maximum and says so with a notice:
+
+```kotlin
+val response = client.cart().addItem(123, 50.0)
+val notices = response.getNotices()["notice"] // ["The quantity of "Beanie" was reduced to 5, the most allowed in the cart."]
+```
+
 ### Rate Limiting
+
+With rate limiting on (CoCart Plus), every response carries `RateLimit-*` headers:
+
+```kotlin
+val rateLimit = response.getRateLimit()
+// RateLimitInfo(limit=25, remaining=24, reset=1791108883, retryAfter=null)
+```
+
+`reset` is the Unix time the window resets, and `retryAfter` the seconds to wait after a 429. Exceeding the limit throws `RateLimitException`. The client retries a CoCart Starter request up to `maxRetries` times, waiting as long as `RateLimit-Retry-After` (or `Retry-After`) says, up to 60 seconds. A CoCart Plus request (checkout, account, JWT) is never sent again by itself, since it can take payment:
 
 ```kotlin
 try {

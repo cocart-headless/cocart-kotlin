@@ -35,10 +35,11 @@ val client = CoCart(
         // API namespace (default: "cocart")
         namespace = "cocart",
 
-        // CoCart main plugin: MainPlugin.BASIC (default) or MainPlugin.LEGACY
-        mainPlugin = MainPlugin.BASIC,
+        // CoCart main plugin: MainPlugin.STARTER (default) or MainPlugin.LEGACY
+        mainPlugin = MainPlugin.STARTER,
 
-        // Retry transient failures (default: 2)
+        // Retry transient failures (default: 2): 429 for any request, network failures
+        // for GETs only, so an order or a cart change is never sent twice
         maxRetries = 2,
 
         // Storage adapter — defaults to EncryptedSharedPreferences when context is provided,
@@ -75,7 +76,7 @@ val client = CoCart(context, "https://your-store.com")
     .addHeader("X-Custom-Header", "value")
     .setAuthHeaderName("X-Auth-Token")
     .setETag(true)
-    .setMainPlugin(MainPlugin.BASIC)
+    .setMainPlugin(MainPlugin.STARTER)
     .setDebug(true)
 ```
 
@@ -150,6 +151,7 @@ Basic-only methods include:
 
 - `products().findBySlug()`
 - `products().variation()`, `category()`, `tag()`
+- `products().attributeBySlug()`, `attributeTermsBySlug()`, `attributeTermBySlug()`
 - `products().brands()`, `brand()`, `byBrand()`
 - `products().myReviews()`
 - `cart().getFees()`, `addFee()`, `removeFees()`
