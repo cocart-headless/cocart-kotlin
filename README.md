@@ -3,7 +3,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue?style=for-the-badge&labelColor=000000)](https://kotlinlang.org/)
 [![Min SDK](https://img.shields.io/badge/Min_SDK-API_26-brightgreen?style=for-the-badge&labelColor=000000)](https://developer.android.com/about/versions/oreo)
 [![Tests](https://img.shields.io/github/actions/workflow/status/cocart-headless/cocart-kotlin/tests.yml?label=tests&style=for-the-badge&labelColor=000000)](https://github.com/cocart-headless/cocart-kotlin/actions/workflows/tests.yml)
-[![License](https://img.shields.io/github/license/cocart-headless/cocart-kotlin-sdk?color=9cf&style=for-the-badge&labelColor=000000)](https://github.com/cocart-headless/cocart-kotlin/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/cocart-headless/cocart-kotlin?color=9cf&style=for-the-badge&labelColor=000000)](https://github.com/cocart-headless/cocart-kotlin/blob/main/LICENSE)
 
 Official Android SDK for the [CoCart](https://cocartapi.com) REST API. Build **headless WooCommerce storefronts** on Android — your app talks to WooCommerce through our API, giving you full control over the shopping experience.
 
@@ -14,8 +14,8 @@ Official Android SDK for the [CoCart](https://cocartapi.com) REST API. Build **h
 
 * [ ] Add SDK docs to documentation site
 * [ ] Add support for Cart API extras
-* [ ] Add Checkout API support
-* [x] Add Customers Account API support
+* [x] Add Checkout API support — implemented ([`client.checkout()`](docs/checkout.md)); needs CoCart Plus 2.0, which isn't released yet
+* [x] Add Customers Account API support — implemented ([`client.account()`](docs/account.md)); needs CoCart Plus 2.0, which isn't released yet
 
 ---
 
@@ -24,6 +24,7 @@ Official Android SDK for the [CoCart](https://cocartapi.com) REST API. Build **h
 - **Android API 26+** (Android 8.0 Oreo) — The minimum Android version required. You can check your `minSdk` in your app's `build.gradle.kts`.
 - **Kotlin 2.0+** — The SDK is written in Kotlin and uses coroutines for async operations.
 - **CoCart plugin** installed on your WooCommerce store — The WordPress plugin that provides the REST API endpoints the SDK communicates with.
+- **CoCart Plus 2.0** for the account and checkout APIs (not released yet) — The add-on plugin that provides customer accounts, checkout and payment. The cart and product APIs don't need it.
 - [CoCart JWT Authentication](https://wordpress.org/plugins/cocart-jwt-authentication/) plugin for JWT features (optional) — Only needed if you want to use JSON Web Token authentication (explained in the [Authentication](docs/authentication.md) guide).
 
 ## Support Policy
@@ -114,8 +115,8 @@ println(cart.get("totals.total"))     // Dot-notation access to nested data
 | [Authentication](docs/authentication.md) | Guest, Basic Auth, JWT, 2FA, consumer keys |
 | [Cart API](docs/cart.md) | Add, update, remove items, coupons, shipping, fees |
 | [Products API](docs/products.md) | List, filter, search, sort, variations, categories, tags, attributes, brands, reviews, shipping rates, SEO |
-| [Account API](docs/account.md) | Registration, customer profile, password, address, orders, downloads, reviews and subscriptions — supported by the SDK, not yet released in the CoCart plugin |
-| [Checkout API](docs/checkout.md) | Place orders and take payment, 3D Secure, payments made outside the checkout, saved payment methods, the thank-you page, paying for unpaid orders, finding out how an order ended (CoCart Plus 2.0) |
+| [Account API](docs/account.md) | Registration, customer profile, password, address, orders, downloads, reviews and subscriptions (needs CoCart Plus 2.0, not released yet) |
+| [Checkout API](docs/checkout.md) | Place orders and take payment, 3D Secure, payments made outside the checkout, saved payment methods, the thank-you page, paying for unpaid orders, finding out how an order ended (needs CoCart Plus 2.0, not released yet) |
 | [Sessions API](docs/sessions.md) | Admin sessions, storage adapters |
 | [Error Handling](docs/error-handling.md) | Error hierarchy, catching errors, fields at fault, common scenarios, expired carts, rate limits |
 | [Utilities](docs/utilities.md) | Currency formatter, response transformer |
