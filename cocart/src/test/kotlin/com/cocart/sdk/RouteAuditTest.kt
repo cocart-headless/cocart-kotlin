@@ -373,16 +373,17 @@ class RouteAuditTest {
     }
 
     @Test
-    fun `order downloads come from the order's downloads route, as sent`() = runTest {
-        server.enqueue(200, """{"downloads":[{"download_id":"abc","download_name":"Guide"}]}""")
+    fun `order downloads come from the order's downloads route, as a list`() = runTest {
+        server.enqueue(200, """[{"id":"abc","name":"Guide"}]""")
         val downloads = client(CoCartOptions(username = "user", password = "pass")).account().getOrderDownloads(42)
         assertEquals("GET /wp-json/cocart/v2/my-account/orders/42/downloads", calls().last())
-        assertEquals(mapOf("downloads" to listOf(mapOf("download_id" to "abc", "download_name" to "Guide"))), downloads.toMap())
+        assertEquals(listOf(mapOf("id" to "abc", "name" to "Guide")), downloads.toList())
+        assertEquals("Guide", downloads.get("0.name"))
 
-        server.enqueue(200, """{"downloads":[]}""")
+        server.enqueue(200, """[]""")
         val guest = client().account().getGuestOrderDownloads(42, "guest@example.com")
         assertEquals("GET /wp-json/cocart/v2/my-account/orders/42/downloads?email=guest%40example.com", calls().last())
-        assertEquals(mapOf("downloads" to emptyList<Any>()), guest.toMap())
+        assertEquals(emptyList<Any>(), guest.toList())
     }
 
     @Test

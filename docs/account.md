@@ -14,7 +14,7 @@ val account = client.account()
 
 > **Note:** All account routes call `cocart/v2/my-account/...` directly, bypassing the configurable namespace and REST prefix. This is by design — the Account API always lives at that fixed path.
 
-Every account document has `object` (`customer`, `order`, `subscription`…), `actions` (what the customer can do next) and, after a change, `result` with what happened (`{code, message}`: `account_created`, `account_updated`…). The methods that read a document take optional `formatted` (amounts formatted for display) and `meta_keys` (only these keys in `meta`; a list is comma-joined) parameters.
+Every account document has `object` (`customer`, `order`, `subscription`…), an order or subscription has `allowed_actions` (the names of what the customer may do with it now, e.g. `pay` or `cancel`) and, after a change, `result` with what happened (`{code, message}`: `account_created`, `account_updated`…). The methods that read a document take optional `formatted` (amounts formatted for display) and `meta_keys` (only these keys in `meta`; a list is comma-joined) parameters.
 
 ## Register
 
@@ -52,7 +52,7 @@ The response is the new customer, as `getProfile()` gives it. The username and p
 
 ### Get Profile
 
-The signed-in customer: name, email, addresses, what they've bought and what they can do next.
+The signed-in customer: name, email, addresses, what they've bought and their latest orders.
 
 ```kotlin
 val customer = client.account().getProfile()
@@ -63,7 +63,7 @@ customer.get("pending_email")            // a new email waiting to be confirmed,
 customer.get("stats.orders_count")       // 14
 customer.get("stats.total_spent")        // "32000" (minor units; formatted = true for "$320.00")
 customer.get("billing.formatted")        // the billing address on one line
-customer.get("related.recent_order")     // the most recent order, or null
+customer.get("recent_orders")            // the latest orders, newest first: id, number, status, date_created, total, href
 
 client.account().getProfile(mapOf("formatted" to true))
 ```
@@ -157,7 +157,7 @@ A boolean is sent as `"true"` or `"false"`, and a `null` value is left out.
 
 ### Get a Single Order
 
-The whole order: what was bought, the totals as lines to display, the payment, the customer, the delivery (shipping lines and downloads), notes and what can be done next.
+The whole order: what was bought, the totals as lines to display, the payment, the customer, the delivery (shipping lines), the downloads, notes and what the customer may do with it now (`allowed_actions`).
 
 ```kotlin
 val order = client.account().getOrder(id = 123)
@@ -165,7 +165,8 @@ val order = client.account().getOrder(id = 123)
 order.get("status.code")           // "completed"
 order.get("total_lines")           // [{key, label, amount, detail}] in display order
 order.get("payment.needs_payment") // true while it can still be paid
-order.get("delivery.downloads")
+order.get("downloads")             // the files the order can download
+order.get("allowed_actions")       // e.g. ["pay", "cancel"]
 
 client.account().getOrder(123, mapOf("formatted" to true, "meta_keys" to listOf("gift_message")))
 ```
@@ -198,12 +199,12 @@ An order that can't be cancelled is `409 cocart_order_cannot_be_cancelled`.
 
 ### Get All Downloads
 
-Every file the customer can download, across all orders: `{ "downloads": [...] }`.
+Every file the customer can download, across all orders, as a list:
 
 ```kotlin
 val response = client.account().getDownloads()
 
-(response.get("downloads") as List<*>).forEach { file ->
+response.toList().forEach { file ->
     file as Map<*, *>
     file["name"]                 // "my-ebook-v2.pdf"
     file["downloads_remaining"]  // 3, or null when unlimited
@@ -213,7 +214,7 @@ val response = client.account().getDownloads()
 
 ### Get Order Downloads
 
-The files one order can download (`GET my-account/orders/{id}/downloads`), returned as sent, in the same `{ "downloads": [...] }` shape:
+The files one order can download (`GET my-account/orders/{id}/downloads`), as the same kind of list:
 
 ```kotlin
 val response = client.account().getOrderDownloads(id = 123)
@@ -221,7 +222,7 @@ val response = client.account().getOrderDownloads(id = 123)
 // For a guest order: the billing email must match
 val guest = client.account().getGuestOrderDownloads(id = 123, email = "customer@example.com")
 
-response.get("downloads")
+response.toList()
 ```
 
 ## Reviews

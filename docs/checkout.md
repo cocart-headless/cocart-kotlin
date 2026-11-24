@@ -162,7 +162,7 @@ config.get("store.terms_text")              // with store.terms_links, terms_url
 The payment methods for this cart:
 
 ```kotlin
-val methods = client.checkout().getPaymentMethods().get("payment_methods") as List<*>
+val methods = client.checkout().getPaymentMethods().toList()
 methods.forEach { method -> /* id, title, description, supports, saved_tokens */ }
 ```
 

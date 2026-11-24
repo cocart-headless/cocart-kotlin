@@ -330,7 +330,7 @@ class HttpClient(
 
         val response: Response
         val parsedBody: Map<String, Any?>
-        // Some routes answer with a list (categories, tags, attributes, reviews, variations).
+        // Some routes answer with a list (categories, tags, attributes, reviews, variations, payment methods, downloads).
         val parsedList: List<Any?>?
         val responseHeaders: Map<String, String>
         val responseCode: Int

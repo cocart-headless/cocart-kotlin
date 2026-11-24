@@ -24,7 +24,7 @@ class CheckoutResource(
 
     /**
      * The checkout as it stands, like a receipt: items, coupons, fees, `totals` and `total_lines`,
-     * the payment method, the addresses, each shipping package with its rates, and `actions`.
+     * the payment method, the addresses, and each shipping package with its rates.
      *
      * Call it for the screen the customer reviews before paying: CoCart Plus remembers the total
      * it showed, and refuses the order if the total has changed by then
@@ -129,7 +129,7 @@ class CheckoutResource(
      */
     suspend fun getConfig(): CoCartResponse = http.getRaw("$route/config")
 
-    /** The payment methods for this cart: `payment_methods`, each with the customer's `saved_tokens`. */
+    /** The payment methods for this cart, as a list (read it with `toList()`), each with the customer's `saved_tokens`. */
     suspend fun getPaymentMethods(): CoCartResponse = http.getRaw("$route/payment-methods")
 
     /**
@@ -138,9 +138,8 @@ class CheckoutResource(
      * `id` as `token_id`. Empty for a guest.
      */
     suspend fun getSavedPaymentMethods(gatewayId: String? = null): List<SavedPaymentMethod> {
-        val methods = getPaymentMethods().get("payment_methods") as? List<*>
         val cards = mutableListOf<SavedPaymentMethod>()
-        for (method in methods.orEmpty()) {
+        for (method in getPaymentMethods().toList()) {
             if (method !is Map<*, *>) continue
             val id = method["id"] as? String ?: continue
             if (gatewayId != null && id != gatewayId) continue

@@ -43,7 +43,7 @@ class AccountResource(
     // --- Profile ---
 
     /**
-     * The signed-in customer: name, email, addresses, order stats and `actions`. [params] takes
+     * The signed-in customer: name, email, addresses and order stats. [params] takes
      * `formatted` and `meta_keys` (a list is comma-joined).
      */
     suspend fun getProfile(params: Map<String, Any?>? = null): CoCartResponse = wrapPluginError {
@@ -122,17 +122,17 @@ class AccountResource(
 
     // --- Downloads ---
 
-    /** The files one of the customer's orders can download: `{ "downloads": [...] }`, as sent. */
+    /** The files one of the customer's orders can download, as a list (read it with `toList()`). */
     suspend fun getOrderDownloads(id: Int): CoCartResponse = wrapPluginError {
         http.getRaw("$base/orders/$id/downloads")
     }
 
-    /** The files a guest's order can download, looked up with its billing email: `{ "downloads": [...] }`, as sent. */
+    /** The files a guest's order can download, looked up with its billing email, as a list (read it with `toList()`). */
     suspend fun getGuestOrderDownloads(id: Int, email: String): CoCartResponse = wrapPluginError {
         http.getRaw("$base/orders/$id/downloads", mapOf("email" to email))
     }
 
-    /** Every file the customer can download: `{ "downloads": [...] }`. */
+    /** Every file the customer can download, as a list (read it with `toList()`). */
     suspend fun getDownloads(): CoCartResponse = wrapPluginError {
         http.getRaw("$base/downloads")
     }

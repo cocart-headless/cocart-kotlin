@@ -107,7 +107,9 @@ class CheckoutFixturesTest {
             }
             if (expect.containsKey("responseBody")) {
                 val response = (outcome as? CheckoutResult)?.response ?: outcome as CoCartResponse
-                assertEquals("responseBody", expect["responseBody"], response.toMap())
+                // A route that answers with a list (payment methods) is compared as one.
+                val body: Any = if (expect["responseBody"] is List<*>) response.toList() else response.toMap()
+                assertEquals("responseBody", expect["responseBody"], body)
             }
         } finally {
             server.shutdown()

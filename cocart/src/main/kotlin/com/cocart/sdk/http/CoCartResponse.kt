@@ -143,7 +143,7 @@ class CoCartResponse(
     /** The body as an object; empty when the route answered with a list (see [toList]). */
     fun toMap(): Map<String, Any?> = data.toMap()
 
-    /** The body as a list, for routes that answer with one (categories, tags, attributes, reviews, variations); empty otherwise. */
+    /** The body as a list, for routes that answer with one (categories, tags, attributes, reviews, variations, payment methods, downloads); empty otherwise. */
     fun toList(): List<Any?> = list ?: emptyList()
 
     fun toJson(): String = list?.let { org.json.JSONArray(it).toString() } ?: JSONObject(data).toString()
